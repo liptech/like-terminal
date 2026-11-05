@@ -46,6 +46,20 @@ impl TerminalView {
                 command.args.clear();
             }
         }
+        if profile.highlight_output {
+            if let Some(relay) = relay_path() {
+                let mut args = vec![
+                    "--rules".to_string(),
+                    HIGHLIGHT_RULES.to_string(),
+                    "--ips".to_string(),
+                    "--".to_string(),
+                    command.program,
+                ];
+                args.extend(command.args);
+                command.program = relay;
+                command.args = args;
+            }
+        }
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.add_css_class("terminal-frame");
@@ -372,6 +386,17 @@ impl Palette {
         };
         Some(palette)
     }
+}
+
+const HIGHLIGHT_RULES: &str = "Error=#ff5f5f:bold;Failed=#ff5f5f:bold;Denied=#ff5f5f:bold;Warning=#f1fa8c;Info=#8be9fd;Success=#50fa7b";
+
+fn relay_path() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let sibling = exe.parent()?.join("like-terminal-relay");
+    if sibling.is_file() {
+        return Some(sibling.display().to_string());
+    }
+    find_in_path("like-terminal-relay")
 }
 
 fn find_in_path(name: &str) -> Option<String> {

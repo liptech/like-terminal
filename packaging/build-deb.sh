@@ -18,6 +18,7 @@ mkdir -p "${root}/usr/share/metainfo"
 mkdir -p "${root}/usr/share/doc/like-terminal"
 
 install -m755 target/release/like-terminal "${root}/usr/bin/like-terminal"
+install -m755 target/release/like-terminal-relay "${root}/usr/bin/like-terminal-relay"
 install -m644 data/io.github.liketerminal.LikeTerminal.desktop \
   "${root}/usr/share/applications/"
 install -m644 data/io.github.liketerminal.LikeTerminal.svg \

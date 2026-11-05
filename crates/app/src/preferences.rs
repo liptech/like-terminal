@@ -78,6 +78,14 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
     syntax_row.set_active(profile.borrow().syntax_highlight);
     appearance.add(&syntax_row);
 
+    let output_row = adw::SwitchRow::new();
+    output_row.set_title("Realce de saída");
+    output_row.set_subtitle(
+        "Colore palavras-chave (Error, Warning, Info, IPs) no texto que chega do host",
+    );
+    output_row.set_active(profile.borrow().highlight_output);
+    appearance.add(&output_row);
+
     page.add(&appearance);
 
     let behavior = adw::PreferencesGroup::new();
@@ -131,6 +139,14 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
                 2 => CursorShape::Underline,
                 _ => CursorShape::Block,
             };
+            hooks(profile.borrow().clone());
+        });
+    }
+    {
+        let profile = profile.clone();
+        let hooks = hooks.set_profile.clone();
+        output_row.connect_active_notify(move |row| {
+            profile.borrow_mut().highlight_output = row.is_active();
             hooks(profile.borrow().clone());
         });
     }

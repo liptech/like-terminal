@@ -324,6 +324,8 @@ pub struct Profile {
     pub copy_on_select: bool,
     #[serde(default)]
     pub syntax_highlight: bool,
+    #[serde(default)]
+    pub highlight_output: bool,
 }
 
 impl Default for Profile {
@@ -337,6 +339,7 @@ impl Default for Profile {
             cursor: CursorShape::Block,
             copy_on_select: false,
             syntax_highlight: false,
+            highlight_output: false,
         }
     }
 }

@@ -54,6 +54,7 @@
       "build-commands": [
         "cargo --offline build --release --locked",
         "install -Dm755 target/release/like-terminal /app/bin/like-terminal",
+        "install -Dm755 target/release/like-terminal-relay /app/bin/like-terminal-relay",
         "install -Dm644 data/io.github.liketerminal.LikeTerminal.desktop /app/share/applications/io.github.liketerminal.LikeTerminal.desktop",
         "install -Dm644 data/io.github.liketerminal.LikeTerminal.metainfo.xml /app/share/metainfo/io.github.liketerminal.LikeTerminal.metainfo.xml",
         "install -Dm644 data/io.github.liketerminal.LikeTerminal.svg /app/share/icons/hicolor/scalable/apps/io.github.liketerminal.LikeTerminal.svg",

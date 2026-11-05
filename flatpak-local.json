@@ -56,7 +56,10 @@
         "install -Dm755 target/release/like-terminal /app/bin/like-terminal",
         "install -Dm644 data/io.github.liketerminal.LikeTerminal.desktop /app/share/applications/io.github.liketerminal.LikeTerminal.desktop",
         "install -Dm644 data/io.github.liketerminal.LikeTerminal.metainfo.xml /app/share/metainfo/io.github.liketerminal.LikeTerminal.metainfo.xml",
-        "install -Dm644 data/io.github.liketerminal.LikeTerminal.svg /app/share/icons/hicolor/scalable/apps/io.github.liketerminal.LikeTerminal.svg"
+        "install -Dm644 data/io.github.liketerminal.LikeTerminal.svg /app/share/icons/hicolor/scalable/apps/io.github.liketerminal.LikeTerminal.svg",
+        "install -Dm644 LICENSE /app/share/doc/like-terminal/LICENSE",
+        "install -Dm644 PRIVACY.md /app/share/doc/like-terminal/PRIVACY.md",
+        "install -Dm644 TERMS.md /app/share/doc/like-terminal/TERMS.md"
       ],
       "sources": [
         "cargo-sources.json",

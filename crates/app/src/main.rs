@@ -1,5 +1,6 @@
 mod app;
 mod askpass;
+mod document;
 mod panes;
 mod preferences;
 mod session_dialog;

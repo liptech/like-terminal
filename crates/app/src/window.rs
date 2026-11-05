@@ -167,6 +167,8 @@ impl Window {
         let preferences_section = gio::Menu::new();
         preferences_section.append(Some("Preferências"), Some("app.preferences"));
         preferences_section.append(Some("Atalhos"), Some("app.shortcuts"));
+        preferences_section.append(Some("Política de privacidade"), Some("app.privacy"));
+        preferences_section.append(Some("Termos de serviço"), Some("app.terms"));
         preferences_section.append(Some("Sobre o Like Terminal"), Some("app.about"));
         menu.append_section(None, &preferences_section);
         let quit_section = gio::Menu::new();
@@ -456,6 +458,12 @@ impl Window {
         });
         add_action(app, self, "preferences", |window| window.open_preferences());
         add_action(app, self, "shortcuts", |window| window.show_shortcuts());
+        add_action(app, self, "privacy", |window| {
+            window.show_document("Política de privacidade", "PRIVACY.md")
+        });
+        add_action(app, self, "terms", |window| {
+            window.show_document("Termos de serviço", "TERMS.md")
+        });
         add_action(app, self, "about", |window| window.show_about());
         add_action(app, self, "quit", |window| window.app.quit());
     }
@@ -919,13 +927,22 @@ impl Window {
             .application_name(APP_NAME)
             .application_icon(APP_ID)
             .version(VERSION)
-            .developer_name("Felipe")
+            .developer_name("Felipe Mendes")
             .comments("Terminal com abas, painéis divididos e gerenciamento de sessões SSH.")
+            .copyright("© 2026 Felipe Mendes")
             .license_type(gtk::License::Gpl30)
             .modal(true)
             .build();
         about.set_transient_for(Some(&self.window));
         about.present();
+    }
+
+    fn show_document(&self, title: &str, file: &str) {
+        match doc_path(file) {
+            Some(path) if crate::document::show(&self.window, title, &path) => {}
+            Some(_) => self.toast("Não foi possível ler o documento."),
+            None => self.toast("Documento não encontrado."),
+        }
     }
 
     fn confirm<F, G>(&self, heading: &str, body: &str, accept: &str, on_accept: F, on_cancel: G)
@@ -976,4 +993,12 @@ where
         }
     });
     app.add_action(&action);
+}
+
+fn doc_path(name: &str) -> Option<std::path::PathBuf> {
+    let installed = std::path::Path::new("/app/share/doc/like-terminal").join(name);
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(name);
+    [installed, source].into_iter().find(|path| path.exists())
 }

@@ -311,6 +311,10 @@ impl PaneView {
     }
 
     fn set_active(&self, view: Rc<TerminalView>) {
+        if let Some(previous) = self.active.borrow().as_ref() {
+            previous.root.remove_css_class("active-pane");
+        }
+        view.root.add_css_class("active-pane");
         *self.active.borrow_mut() = Some(view);
         (self.on_state)();
     }

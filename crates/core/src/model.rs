@@ -322,6 +322,8 @@ pub struct Profile {
     pub scrollback: u32,
     pub cursor: CursorShape,
     pub copy_on_select: bool,
+    #[serde(default)]
+    pub syntax_highlight: bool,
 }
 
 impl Default for Profile {
@@ -334,6 +336,7 @@ impl Default for Profile {
             scrollback: default_scrollback(),
             cursor: CursorShape::Block,
             copy_on_select: false,
+            syntax_highlight: false,
         }
     }
 }

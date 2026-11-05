@@ -2,10 +2,13 @@ use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use gtk::gio;
 use gtk::prelude::*;
 use lt_core::{AuthMethod, Profile, Session};
 use lt_ssh::{AskpassKind, AskpassSpec};
 use vte4::prelude::*;
+
+const PCRE2_MULTILINE: u32 = 0x0000_0400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnState {
@@ -20,6 +23,7 @@ pub struct TerminalView {
     pub session: Session,
     pub terminal: vte4::Terminal,
     state: Rc<Cell<ConnState>>,
+    search_tag: Cell<i32>,
 }
 
 impl TerminalView {
@@ -35,7 +39,13 @@ impl TerminalView {
         apply_profile(&terminal, profile);
 
         let askpass = askpass_for(session, exe);
-        let command = lt_ssh::build(session, askpass.as_ref())?;
+        let mut command = lt_ssh::build(session, askpass.as_ref())?;
+        if session.is_local() && profile.syntax_highlight {
+            if let Some(fish) = find_in_path("fish") {
+                command.program = fish;
+                command.args.clear();
+            }
+        }
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.add_css_class("terminal-frame");
@@ -49,7 +59,10 @@ impl TerminalView {
             session: session.clone(),
             terminal,
             state: state.clone(),
+            search_tag: Cell::new(-1),
         });
+
+        setup_links(&view.terminal);
 
         let state_signal = state.clone();
         let on_state_exit = on_state.clone();
@@ -141,17 +154,27 @@ impl TerminalView {
     }
 
     pub fn search(&self, needle: &str) -> bool {
+        self.clear_highlight();
         if needle.is_empty() {
             self.terminal.search_set_regex(None, 0);
             return false;
         }
         let escaped = glib::Regex::escape_string(needle);
-        match vte4::Regex::for_search(&escaped, 0) {
-            Ok(regex) => {
-                self.terminal.search_set_regex(Some(&regex), 0);
-                self.terminal.search_find_next()
-            }
-            Err(_) => false,
+        let Ok(regex) = vte4::Regex::for_search(&escaped, PCRE2_MULTILINE) else {
+            return false;
+        };
+        self.terminal.search_set_regex(Some(&regex), 0);
+        if let Ok(highlight) = vte4::Regex::for_match(&escaped, PCRE2_MULTILINE) {
+            let tag = self.terminal.match_add_regex(&highlight, 0);
+            self.search_tag.set(tag);
+        }
+        self.terminal.search_find_next()
+    }
+
+    pub fn clear_highlight(&self) {
+        let tag = self.search_tag.replace(-1);
+        if tag >= 0 {
+            self.terminal.match_remove(tag);
         }
     }
 
@@ -229,8 +252,31 @@ pub fn apply_profile(terminal: &vte4::Terminal, profile: &Profile) {
         if refs.len() == palette.colors.len() {
             terminal.set_colors(foreground.as_ref(), background.as_ref(), &refs);
         }
+        if let Some(accent) = palette
+            .colors
+            .get(4)
+            .and_then(|c| gtk::gdk::RGBA::parse(*c).ok())
+        {
+            let mut selection = accent;
+            selection.set_alpha(0.45);
+            terminal.set_color_highlight(Some(&selection));
+            terminal.set_color_highlight_foreground(foreground.as_ref());
+        }
     }
 }
+
+pub const PALETTES: &[(&str, &str)] = &[
+    ("system", "Sistema"),
+    ("tango", "Tango"),
+    ("solarized-dark", "Solarized Dark"),
+    ("solarized-light", "Solarized Light"),
+    ("dracula", "Dracula"),
+    ("nord", "Nord"),
+    ("gruvbox-dark", "Gruvbox Dark"),
+    ("one-dark", "One Dark"),
+    ("catppuccin-mocha", "Catppuccin Mocha"),
+    ("tokyo-night", "Tokyo Night"),
+];
 
 struct Palette {
     foreground: &'static str,
@@ -268,8 +314,123 @@ impl Palette {
                     "#a4ffff", "#ffffff",
                 ],
             },
+            "solarized-light" => Self {
+                foreground: "#657b83",
+                background: "#fdf6e3",
+                colors: [
+                    "#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198",
+                    "#eee8d5", "#002b36", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4",
+                    "#93a1a1", "#fdf6e3",
+                ],
+            },
+            "nord" => Self {
+                foreground: "#d8dee9",
+                background: "#2e3440",
+                colors: [
+                    "#3b4252", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0",
+                    "#e5e9f0", "#4c566a", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead",
+                    "#8fbcbb", "#eceff4",
+                ],
+            },
+            "gruvbox-dark" => Self {
+                foreground: "#ebdbb2",
+                background: "#282828",
+                colors: [
+                    "#282828", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a",
+                    "#a89984", "#928374", "#fb4934", "#b8bb26", "#fabd2f", "#83a598", "#d3869b",
+                    "#8ec07c", "#ebdbb2",
+                ],
+            },
+            "one-dark" => Self {
+                foreground: "#abb2bf",
+                background: "#282c34",
+                colors: [
+                    "#282c34", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2",
+                    "#dcdfe4", "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd",
+                    "#56b6c2", "#ffffff",
+                ],
+            },
+            "catppuccin-mocha" => Self {
+                foreground: "#cdd6f4",
+                background: "#1e1e2e",
+                colors: [
+                    "#45475a", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5",
+                    "#bac2de", "#585b70", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7",
+                    "#94e2d5", "#a6adc8",
+                ],
+            },
+            "tokyo-night" => Self {
+                foreground: "#c0caf5",
+                background: "#1a1b26",
+                colors: [
+                    "#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff",
+                    "#a9b1d6", "#414868", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7",
+                    "#7dcfff", "#c0caf5",
+                ],
+            },
             _ => return None,
         };
         Some(palette)
     }
+}
+
+fn find_in_path(name: &str) -> Option<String> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+        .map(|path| path.display().to_string())
+}
+
+fn setup_links(terminal: &vte4::Terminal) {
+    terminal.set_allow_hyperlink(true);
+    let patterns = [
+        r#"(?i)\b(?:https?|ftp)://[^\s<>"']+"#,
+        r"[[:alnum:]._%+-]+@[[:alnum:]-]+\.[[:alnum:].-]+",
+        r"(?:~|/)[[:alnum:]_.+/-]{2,}",
+    ];
+    for pattern in patterns {
+        if let Ok(regex) = vte4::Regex::for_match(pattern, PCRE2_MULTILINE) {
+            let tag = terminal.match_add_regex(&regex, 0);
+            terminal.match_set_cursor_name(tag, "pointer");
+        }
+    }
+
+    let gesture = gtk::GestureClick::new();
+    gesture.set_button(gtk::gdk::BUTTON_PRIMARY);
+    let term = terminal.clone();
+    gesture.connect_released(move |gesture, _n_press, x, y| {
+        if !gesture
+            .current_event_state()
+            .contains(gtk::gdk::ModifierType::CONTROL_MASK)
+        {
+            return;
+        }
+        if let Some(uri) = link_at(&term, x, y) {
+            let _ = gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>);
+        }
+    });
+    terminal.add_controller(gesture);
+}
+
+fn link_at(terminal: &vte4::Terminal, x: f64, y: f64) -> Option<String> {
+    if let Some(uri) = terminal.check_hyperlink_at(x, y) {
+        return Some(uri.to_string());
+    }
+    let (text, tag) = terminal.check_match_at(x, y);
+    if tag < 0 {
+        return None;
+    }
+    let text = text?.to_string();
+    if text.contains("://") {
+        return Some(text);
+    }
+    if text.contains('@') && !text.starts_with('/') && !text.starts_with('~') {
+        return Some(format!("mailto:{text}"));
+    }
+    let path = match text.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir().map(|home| home.join(rest))?,
+        None => PathBuf::from(text),
+    };
+    Some(format!("file://{}", path.display()))
 }

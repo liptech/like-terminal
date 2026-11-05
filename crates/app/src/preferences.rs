@@ -6,6 +6,8 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use lt_core::{CursorShape, Profile, Store};
 
+use crate::terminal::PALETTES;
+
 #[derive(Clone)]
 pub struct PrefsHooks {
     pub set_profile: Rc<dyn Fn(Profile)>,
@@ -37,16 +39,15 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
 
     let palette_row = adw::ActionRow::new();
     palette_row.set_title("Paleta de cores");
-    let palettes = gtk::DropDown::from_strings(&["Sistema", "Tango", "Solarized Dark", "Dracula"]);
+    let palette_labels: Vec<&str> = PALETTES.iter().map(|(_, label)| *label).collect();
+    let palettes = gtk::DropDown::from_strings(&palette_labels);
     palettes.set_valign(gtk::Align::Center);
     let current_palette = profile.borrow().palette.clone();
-    let palette_index = match current_palette.as_str() {
-        "tango" => 1,
-        "solarized-dark" => 2,
-        "dracula" => 3,
-        _ => 0,
-    };
-    palettes.set_selected(palette_index);
+    let palette_index = PALETTES
+        .iter()
+        .position(|(id, _)| *id == current_palette)
+        .unwrap_or(0);
+    palettes.set_selected(palette_index as u32);
     palette_row.add_suffix(&palettes);
     appearance.add(&palette_row);
 
@@ -69,6 +70,13 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
     });
     cursor_row.add_suffix(&cursors);
     appearance.add(&cursor_row);
+
+    let syntax_row = adw::SwitchRow::new();
+    syntax_row.set_title("Realce de sintaxe no shell");
+    syntax_row
+        .set_subtitle("Usa o fish, quando instalado, para colorir comandos enquanto você digita");
+    syntax_row.set_active(profile.borrow().syntax_highlight);
+    appearance.add(&syntax_row);
 
     page.add(&appearance);
 
@@ -100,12 +108,8 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
         let profile = profile.clone();
         let hooks = hooks.set_profile.clone();
         palettes.connect_selected_notify(move |dropdown| {
-            let name = match dropdown.selected() {
-                1 => "tango",
-                2 => "solarized-dark",
-                3 => "dracula",
-                _ => "system",
-            };
+            let index = dropdown.selected() as usize;
+            let name = PALETTES.get(index).map(|(id, _)| *id).unwrap_or("system");
             profile.borrow_mut().palette = name.to_string();
             hooks(profile.borrow().clone());
         });
@@ -127,6 +131,14 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
                 2 => CursorShape::Underline,
                 _ => CursorShape::Block,
             };
+            hooks(profile.borrow().clone());
+        });
+    }
+    {
+        let profile = profile.clone();
+        let hooks = hooks.set_profile.clone();
+        syntax_row.connect_active_notify(move |row| {
+            profile.borrow_mut().syntax_highlight = row.is_active();
             hooks(profile.borrow().clone());
         });
     }

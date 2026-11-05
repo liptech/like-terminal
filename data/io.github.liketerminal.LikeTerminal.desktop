@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Like Terminal
+GenericName=Terminal
+Comment=Terminal com abas, painéis divididos e conexões SSH
+Exec=like-terminal
+Icon=io.github.liketerminal.LikeTerminal
+Terminal=false
+Type=Application
+Categories=System;TerminalEmulator;
+Keywords=terminal;ssh;shell;console;ssh;
+StartupNotify=true
+StartupWMClass=io.github.liketerminal.LikeTerminal

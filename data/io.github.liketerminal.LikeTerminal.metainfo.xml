@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.liketerminal.LikeTerminal</id>
+
+  <name>Like Terminal</name>
+  <summary>Terminal com abas, painéis divididos e conexões SSH</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Like Terminal é um emulador de terminal para a área de trabalho GNOME com
+      abas, painéis divididos e um gerenciador de sessões para conexões SSH.
+    </p>
+    <p>Recursos:</p>
+    <ul>
+      <li>Abas e painéis divididos dentro de cada aba</li>
+      <li>Perfis de terminal com fonte, paleta, cursor e histórico configuráveis</li>
+      <li>Sessões SSH com chave privada, agente, jump host e keepalive</li>
+      <li>Conexão rápida por <code>usuario@host:porta</code> ou nome de sessão</li>
+      <li>Senhas e passphrases guardadas no chaveiro do sistema</li>
+      <li>Busca no histórico, zoom e envio de texto para todos os painéis</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.liketerminal.LikeTerminal.desktop</launchable>
+  <provides>
+    <binary>like-terminal</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/liketerminal/like-terminal</url>
+  <url type="bugtracker">https://github.com/liketerminal/like-terminal/issues</url>
+
+  <developer id="io.github.liketerminal">
+    <name>Like Terminal</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-11-05">
+      <description>
+        <p>Primeira versão: abas, painéis divididos, perfis, sessões SSH e conexão rápida.</p>
+      </description>
+    </release>
+  </releases>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+</component>

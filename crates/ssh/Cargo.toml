@@ -1,0 +1,10 @@
+[package]
+name = "lt-ssh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-core.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

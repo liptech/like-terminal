@@ -100,9 +100,7 @@ pub fn build(session: &Session, askpass: Option<&AskpassSpec>) -> Result<Command
     match session.auth.method {
         AuthMethod::Password => {
             args.push("-o".into());
-            args.push("PreferredAuthentications=password,keyboard-interactive".into());
-            args.push("-o".into());
-            args.push("PubkeyAuthentication=no".into());
+            args.push("PreferredAuthentications=password,keyboard-interactive,publickey".into());
         }
         AuthMethod::KeyboardInteractive => {
             args.push("-o".into());
@@ -200,14 +198,14 @@ mod tests {
     }
 
     #[test]
-    fn password_session_disables_pubkey() {
+    fn password_session_falls_back_to_pubkey() {
         let args = args(&session());
         assert!(args.contains(&"-tt".to_string()));
         assert_eq!(args.last().unwrap(), "10.0.0.21");
-        assert!(args.iter().any(|arg| arg == "PubkeyAuthentication=no"));
+        assert!(!args.iter().any(|arg| arg == "PubkeyAuthentication=no"));
         assert!(args
             .iter()
-            .any(|arg| arg == "PreferredAuthentications=password,keyboard-interactive"));
+            .any(|arg| arg == "PreferredAuthentications=password,keyboard-interactive,publickey"));
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "-p" && pair[1] == "22"));

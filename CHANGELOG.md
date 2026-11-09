@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.2.3] - 2026-11-09
+
+### Adicionado
+
+- Preferência "Restaurar abas ao abrir": permite iniciar com a janela vazia em vez de reabrir as abas e divisões da última sessão.
+
 ## [0.2.2] - 2026-11-09
 
 ### Corrigido

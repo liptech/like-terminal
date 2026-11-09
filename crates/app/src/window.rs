@@ -756,6 +756,9 @@ impl Window {
     }
 
     fn restore_tabs(&self, ui: &UiState) {
+        if !self.store.borrow().settings.restore_tabs {
+            return;
+        }
         if ui.tabs.is_empty() {
             self.restore_sessions(&ui.open_sessions);
             return;
@@ -1161,6 +1164,15 @@ impl Window {
                     Rc::new(move |confirm: bool| {
                         if let Some(window) = weak.upgrade() {
                             window.store.borrow_mut().settings.confirm_close_running = confirm;
+                            window.save_store();
+                        }
+                    })
+                },
+                set_restore_tabs: {
+                    let weak = Rc::downgrade(&self.as_rc());
+                    Rc::new(move |restore: bool| {
+                        if let Some(window) = weak.upgrade() {
+                            window.store.borrow_mut().settings.restore_tabs = restore;
                             window.save_store();
                         }
                     })

@@ -600,6 +600,8 @@ pub struct HighlightConfig {
 pub struct Settings {
     pub confirm_close_running: bool,
     pub default_profile: String,
+    #[serde(default = "default_true")]
+    pub restore_tabs: bool,
 }
 
 impl Default for Settings {
@@ -607,6 +609,7 @@ impl Default for Settings {
         Self {
             confirm_close_running: default_true(),
             default_profile: DEFAULT_PROFILE_ID.to_string(),
+            restore_tabs: true,
         }
     }
 }

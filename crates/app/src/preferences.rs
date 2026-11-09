@@ -12,6 +12,7 @@ use crate::terminal::PALETTES;
 pub struct PrefsHooks {
     pub set_profile: Rc<dyn Fn(Profile)>,
     pub set_confirm_close: Rc<dyn Fn(bool)>,
+    pub set_restore_tabs: Rc<dyn Fn(bool)>,
     pub set_highlight: Rc<dyn Fn(Vec<HighlightRule>, bool)>,
 }
 
@@ -97,6 +98,12 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
     copy_row.set_active(profile.borrow().copy_on_select);
     behavior.add(&copy_row);
 
+    let restore_row = adw::SwitchRow::new();
+    restore_row.set_title("Restaurar abas ao abrir");
+    restore_row.set_subtitle("Reabre as abas e divisões da última sessão ao iniciar o app");
+    restore_row.set_active(store.settings.restore_tabs);
+    behavior.add(&restore_row);
+
     let confirm_row = adw::SwitchRow::new();
     confirm_row.set_title("Confirmar ao fechar sessões ativas");
     confirm_row.set_active(store.settings.confirm_close_running);
@@ -166,6 +173,10 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
             profile.borrow_mut().copy_on_select = row.is_active();
             hooks(profile.borrow().clone());
         });
+    }
+    {
+        let hooks = hooks.set_restore_tabs.clone();
+        restore_row.connect_active_notify(move |row| hooks(row.is_active()));
     }
     {
         let hooks = hooks.set_confirm_close.clone();

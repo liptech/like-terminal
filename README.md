@@ -26,6 +26,8 @@ App ID: `io.github.liketerminal.LikeTerminal` · Binário: `like-terminal` · Au
 | Conexão rápida | Abre sessão a partir de `usuario@host:porta` ou nome salvo. |
 | Snippets | Comandos salvos, aplicáveis com busca; envio a um painel ou a todos. |
 | Importação | Importa hosts de `~/.ssh/config`. |
+| Encaminhamento de portas | Regras locais, remotas e SOCKS (`-L`, `-R`, `-D`) com editor gráfico no diálogo da sessão. |
+| SFTP | Navegador de dois painéis (local/remoto): listagem, navegação, criação/renomeação/exclusão e transferência de arquivos. |
 | Log de sessão | Grava saída em arquivo, com timestamps e pausa/retomada. |
 | Persistência | Geometria da janela, abas e layout de painéis restaurados ao reabrir. |
 | Senhas | Armazenadas no Secret Service (keyring), serviço `like-terminal`. |
@@ -212,10 +214,11 @@ Dentro do Flatpak o prefixo é `~/.var/app/io.github.liketerminal.LikeTerminal/`
 
 Entregue na 0.2: realce configurável (regras editáveis + IPs), relay robusto em UTF-8,
 log de sessão com timestamps e toggle, persistência de splits e broadcast, snippets,
-importação de `~/.ssh/config`.
+importação de `~/.ssh/config`, encaminhamento de portas (local/remoto/SOCKS) e
+navegador SFTP em dois painéis.
 
-Próximos: port forwarding e cadeia de jump hosts, SFTP em dois painéis, CI, publicação
-no Flathub, AppImage, i18n, senha mestra, sync de sessões.
+Próximos: cadeia de jump hosts, CI, publicação no Flathub, AppImage, i18n, senha
+mestra, sync de sessões.
 
 ## Licença
 

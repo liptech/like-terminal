@@ -5,7 +5,7 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
-## [Não publicado]
+## [0.2.0] - 2026-11-09
 
 ### Adicionado
 - Realce de saída configurável: regras editáveis (palavra-chave, cor, negrito, ignorar
@@ -16,6 +16,12 @@ este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Persistência de splits (até 8 painéis) e do estado do broadcast entre sessões.
 - Snippets: comandos salvos com busca e envio a um painel ou a todos.
 - Importação de hosts de `~/.ssh/config` (alias, host, usuário, porta, chave).
+- Encaminhamento de portas local, remoto e SOCKS (`-L`, `-R`, `-D`) com editor gráfico
+  de regras no diálogo de sessão.
+- Navegador SFTP de dois painéis (local/remoto) com listagem, navegação, criação de
+  pasta, renomeação, exclusão e transferência de arquivos, usando russh/russh-sftp em
+  Rust puro.
+- Estado vazio com chamada para ação quando não há abas abertas.
 
 ## [0.1.0] - 2026-11-05
 

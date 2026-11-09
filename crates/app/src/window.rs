@@ -272,7 +272,8 @@ impl Window {
             let name = if tabs.n_pages() == 0 { "empty" } else { "tabs" };
             stack_cb.set_visible_child_name(name);
         });
-        stack.set_visible_child_name("tabs");
+        let initial_name = if tabs.n_pages() == 0 { "empty" } else { "tabs" };
+        stack.set_visible_child_name(initial_name);
 
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.set_vexpand(true);

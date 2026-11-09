@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use lt_core::{Profile, Session};
+use lt_core::{HighlightConfig, Profile, Session};
 use uuid::Uuid;
 
 use crate::terminal::{ConnState, TerminalView};
@@ -23,6 +23,7 @@ pub struct PaneView {
     pub root: gtk::Box,
     session: Session,
     profile: Profile,
+    highlight: HighlightConfig,
     exe: PathBuf,
     container: gtk::Box,
     search_bar: gtk::SearchBar,
@@ -39,6 +40,7 @@ impl PaneView {
     pub fn new(
         session: Session,
         profile: Profile,
+        highlight: HighlightConfig,
         exe: PathBuf,
         on_close: Rc<dyn Fn()>,
         on_state: Rc<dyn Fn()>,
@@ -69,7 +71,7 @@ impl PaneView {
         root.append(&container);
         root.append(&search_bar);
 
-        let first = TerminalView::new(&session, &profile, exe.clone(), {
+        let first = TerminalView::new(&session, &profile, &highlight, exe.clone(), {
             let on_state = on_state.clone();
             Rc::new(move |_state: ConnState| on_state())
         })?;
@@ -78,6 +80,7 @@ impl PaneView {
             root,
             session,
             profile,
+            highlight,
             exe,
             container,
             search_bar,
@@ -334,10 +337,16 @@ impl PaneView {
             return;
         };
 
-        let new_view = match TerminalView::new(&self.session, &self.profile, self.exe.clone(), {
-            let on_state = self.on_state.clone();
-            Rc::new(move |_state: ConnState| on_state())
-        }) {
+        let new_view = match TerminalView::new(
+            &self.session,
+            &self.profile,
+            &self.highlight,
+            self.exe.clone(),
+            {
+                let on_state = self.on_state.clone();
+                Rc::new(move |_state: ConnState| on_state())
+            },
+        ) {
             Ok(view) => view,
             Err(error) => {
                 tracing::warn!(%error, "falha ao dividir o painel");

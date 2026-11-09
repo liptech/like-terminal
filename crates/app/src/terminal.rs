@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gtk::gio;
 use gtk::prelude::*;
-use lt_core::{AuthMethod, Profile, Session};
+use lt_core::{AuthMethod, HighlightConfig, Profile, Session};
 use lt_ssh::{AskpassKind, AskpassSpec};
 use vte4::prelude::*;
 
@@ -30,6 +30,7 @@ impl TerminalView {
     pub fn new(
         session: &Session,
         profile: &Profile,
+        highlight: &HighlightConfig,
         exe: PathBuf,
         on_state: Rc<dyn Fn(ConnState)>,
     ) -> Result<Rc<Self>, lt_ssh::BuildError> {
@@ -48,16 +49,21 @@ impl TerminalView {
         }
         if profile.highlight_output {
             if let Some(relay) = relay_path() {
-                let mut args = vec![
-                    "--rules".to_string(),
-                    HIGHLIGHT_RULES.to_string(),
-                    "--ips".to_string(),
-                    "--".to_string(),
-                    command.program,
-                ];
-                args.extend(command.args);
-                command.program = relay;
-                command.args = args;
+                let mut args = Vec::new();
+                if let Some(spec) = &highlight.spec {
+                    args.push("--rules".to_string());
+                    args.push(spec.clone());
+                }
+                if highlight.ips {
+                    args.push("--ips".to_string());
+                }
+                if !args.is_empty() {
+                    args.push("--".to_string());
+                    args.push(command.program);
+                    args.extend(command.args);
+                    command.program = relay;
+                    command.args = args;
+                }
             }
         }
 
@@ -387,8 +393,6 @@ impl Palette {
         Some(palette)
     }
 }
-
-const HIGHLIGHT_RULES: &str = "Error=#ff5f5f:bold;Failed=#ff5f5f:bold;Denied=#ff5f5f:bold;Warning=#f1fa8c;Info=#8be9fd;Success=#50fa7b";
 
 fn relay_path() -> Option<String> {
     let exe = std::env::current_exe().ok()?;

@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 use gtk::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use lt_core::{Folder, Paths, Profile, Session, Store};
+use lt_core::{Folder, HighlightRule, Paths, Profile, Session, Store};
 use uuid::Uuid;
 
 use crate::app::{APP_ID, APP_NAME, VERSION};
@@ -531,9 +531,11 @@ impl Window {
             }
         });
 
+        let highlight = self.store.borrow().highlight_config();
         let pane = match PaneView::new(
             session.clone(),
             profile,
+            highlight,
             self.exe.clone(),
             on_close,
             on_state,
@@ -890,6 +892,19 @@ impl Window {
                     Rc::new(move |confirm: bool| {
                         if let Some(window) = weak.upgrade() {
                             window.store.borrow_mut().settings.confirm_close_running = confirm;
+                            window.save_store();
+                        }
+                    })
+                },
+                set_highlight: {
+                    let weak = Rc::downgrade(&self.as_rc());
+                    Rc::new(move |rules: Vec<HighlightRule>, ips: bool| {
+                        if let Some(window) = weak.upgrade() {
+                            {
+                                let mut store = window.store.borrow_mut();
+                                store.highlight_rules = rules;
+                                store.highlight_ips = ips;
+                            }
                             window.save_store();
                         }
                     })

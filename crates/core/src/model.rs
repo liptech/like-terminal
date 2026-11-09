@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const STORE_VERSION: u32 = 1;
+pub const STORE_VERSION: u32 = 2;
 pub const DEFAULT_PROFILE_ID: &str = "default";
 
 fn default_version() -> u32 {
@@ -34,6 +34,8 @@ pub struct Store {
     pub sessions: Vec<Session>,
     pub profiles: Vec<Profile>,
     pub settings: Settings,
+    pub highlight_rules: Vec<HighlightRule>,
+    pub highlight_ips: bool,
 }
 
 impl Default for Store {
@@ -44,6 +46,8 @@ impl Default for Store {
             sessions: Vec::new(),
             profiles: vec![Profile::default()],
             settings: Settings::default(),
+            highlight_rules: default_highlight_rules(),
+            highlight_ips: true,
         }
     }
 }
@@ -77,6 +81,19 @@ impl Store {
 
     pub fn default_profile(&self) -> &Profile {
         self.profile(&self.settings.default_profile)
+    }
+
+    pub fn highlight_config(&self) -> HighlightConfig {
+        let rules: Vec<String> = self
+            .highlight_rules
+            .iter()
+            .filter(|rule| rule.problem().is_none())
+            .map(HighlightRule::spec)
+            .collect();
+        HighlightConfig {
+            spec: (!rules.is_empty()).then(|| rules.join(";")),
+            ips: self.highlight_ips,
+        }
     }
 
     pub fn session(&self, id: Uuid) -> Option<&Session> {
@@ -353,6 +370,83 @@ pub enum CursorShape {
     Underline,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HighlightRule {
+    pub keyword: String,
+    pub color: String,
+    pub bold: bool,
+    pub case_insensitive: bool,
+}
+
+impl Default for HighlightRule {
+    fn default() -> Self {
+        Self {
+            keyword: String::new(),
+            color: "#ff5f5f".to_string(),
+            bold: false,
+            case_insensitive: true,
+        }
+    }
+}
+
+impl HighlightRule {
+    pub fn problem(&self) -> Option<&'static str> {
+        let keyword = self.keyword.trim();
+        if keyword.is_empty() {
+            return Some("Informe a palavra-chave.");
+        }
+        if keyword.contains([';', '=']) {
+            return Some("A palavra não pode conter ';' nem '='.");
+        }
+        if !is_hex_color(&self.color) {
+            return Some("Cor inválida: use #rrggbb.");
+        }
+        None
+    }
+
+    pub fn spec(&self) -> String {
+        let mut spec = format!("{}={}", self.keyword.trim(), self.color);
+        if self.bold {
+            spec.push_str(":bold");
+        }
+        if self.case_insensitive {
+            spec.push_str(":nocase");
+        }
+        spec
+    }
+}
+
+fn is_hex_color(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn default_highlight_rules() -> Vec<HighlightRule> {
+    [
+        ("Error", "#ff5f5f", true),
+        ("Failed", "#ff5f5f", true),
+        ("Denied", "#ff5f5f", true),
+        ("Warning", "#f1fa8c", false),
+        ("Info", "#8be9fd", false),
+        ("Success", "#50fa7b", false),
+    ]
+    .into_iter()
+    .map(|(keyword, color, bold)| HighlightRule {
+        keyword: keyword.to_string(),
+        color: color.to_string(),
+        bold,
+        case_insensitive: true,
+    })
+    .collect()
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HighlightConfig {
+    pub spec: Option<String>,
+    pub ips: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -372,6 +466,58 @@ impl Default for Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlight_rule_spec_includes_flags() {
+        let rule = HighlightRule {
+            keyword: " Error ".to_string(),
+            color: "#ff0000".to_string(),
+            bold: true,
+            case_insensitive: true,
+        };
+        assert_eq!(rule.spec(), "Error=#ff0000:bold:nocase");
+        assert_eq!(rule.problem(), None);
+    }
+
+    #[test]
+    fn highlight_rule_rejects_invalid_values() {
+        let mut rule = HighlightRule::default();
+        assert!(rule.problem().is_some());
+
+        rule.keyword = "a=b".to_string();
+        assert!(rule.problem().is_some());
+
+        rule.keyword = "Error".to_string();
+        rule.color = "red".to_string();
+        assert!(rule.problem().is_some());
+
+        rule.color = "#00ff00".to_string();
+        assert_eq!(rule.problem(), None);
+    }
+
+    #[test]
+    fn legacy_store_gets_highlight_defaults() {
+        let json = r#"{"version":1,"sessions":[],"folders":[],"profiles":[],"settings":{"default_profile":"default","confirm_close_running":true}}"#;
+        let store: Store = serde_json::from_str(json).expect("store antigo");
+        assert!(!store.highlight_rules.is_empty());
+        assert!(store.highlight_ips);
+        assert_eq!(store.highlight_rules[0].keyword, "Error");
+    }
+
+    #[test]
+    fn highlight_config_comes_from_enabled_rules() {
+        let mut store = Store::default();
+        let config = store.highlight_config();
+        let spec = config.spec.expect("spec");
+        assert!(spec.contains("Error=#ff5f5f:bold:nocase"));
+        assert!(config.ips);
+
+        store.highlight_rules.clear();
+        store.highlight_ips = false;
+        let config = store.highlight_config();
+        assert_eq!(config.spec, None);
+        assert!(!config.ips);
+    }
 
     #[test]
     fn default_store_has_profile() {

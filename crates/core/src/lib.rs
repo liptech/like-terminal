@@ -4,8 +4,8 @@ pub mod store;
 pub mod validate;
 
 pub use model::{
-    AuthMethod, AuthOptions, CursorShape, Folder, Profile, Session, Settings, SshOptions, Store,
-    TerminalOptions, DEFAULT_PROFILE_ID, STORE_VERSION,
+    AuthMethod, AuthOptions, CursorShape, Folder, HighlightConfig, HighlightRule, Profile, Session,
+    Settings, SshOptions, Store, TerminalOptions, DEFAULT_PROFILE_ID, STORE_VERSION,
 };
 pub use secrets::{
     account_passphrase, account_password, KeyringStore, MemoryStore, SecretError, SecretStore,

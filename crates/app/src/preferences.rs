@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use lt_core::{CursorShape, Profile, Store};
+use lt_core::{CursorShape, HighlightRule, Profile, Store};
 
 use crate::terminal::PALETTES;
 
@@ -12,6 +12,7 @@ use crate::terminal::PALETTES;
 pub struct PrefsHooks {
     pub set_profile: Rc<dyn Fn(Profile)>,
     pub set_confirm_close: Rc<dyn Fn(bool)>,
+    pub set_highlight: Rc<dyn Fn(Vec<HighlightRule>, bool)>,
 }
 
 pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
@@ -170,6 +171,11 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
         let hooks = hooks.set_confirm_close.clone();
         confirm_row.connect_active_notify(move |row| hooks(row.is_active()));
     }
+
+    window.add(&crate::highlight_page::build(
+        store,
+        hooks.set_highlight.clone(),
+    ));
 
     window.present();
 }

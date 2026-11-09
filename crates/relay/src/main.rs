@@ -478,4 +478,59 @@ mod tests {
         out.extend(filter.flush());
         assert_eq!(String::from_utf8_lossy(&out), "Ação concluída ✓");
     }
+
+    #[test]
+    fn keeps_multibyte_characters_at_every_split_point() {
+        let text = "Ação concluída ✓ — fim";
+        let data = text.as_bytes();
+        for split in 1..data.len() {
+            let mut filter = Filter::new(vec![rule("fim", "0;255;0")], false);
+            let mut out = filter.feed(&data[..split]);
+            out.extend(filter.feed(&data[split..]));
+            out.extend(filter.flush());
+            let rendered = String::from_utf8_lossy(&out).to_string();
+            let plain = rendered
+                .replace("\x1b[38;2;0;255;0m", "")
+                .replace("\x1b[0m", "");
+            assert_eq!(plain, text, "split em {split}");
+        }
+    }
+
+    #[test]
+    fn colors_accented_keyword_split_between_chunks() {
+        let mut filter = Filter::new(vec![rule("concluída", "0;255;0")], false);
+        let data = "Ação concluída ✓".as_bytes();
+        let mut out = filter.feed(&data[..8]);
+        out.extend(filter.feed(&data[8..]));
+        out.extend(filter.flush());
+        let text = String::from_utf8_lossy(&out);
+        assert!(
+            text.contains("\x1b[38;2;0;255;0mconcluída\x1b[0m"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn handles_chunk_ending_on_continuation_byte() {
+        let mut filter = Filter::new(vec![rule("ção", "0;255;0")], false);
+        let data = "Ação".as_bytes();
+        let mut out = filter.feed(&data[..3]);
+        out.extend(filter.feed(&data[3..]));
+        out.extend(filter.flush());
+        let text = String::from_utf8_lossy(&out);
+        assert_eq!(
+            text.replace("\x1b[38;2;0;255;0m", "")
+                .replace("\x1b[0m", ""),
+            "Ação"
+        );
+        assert!(text.contains("ção"), "{text:?}");
+    }
+
+    #[test]
+    fn passes_output_through_without_rules() {
+        let mut filter = Filter::new(Vec::new(), false);
+        let mut out = filter.feed(b"\x1b[32mok\x1b[0m\n");
+        out.extend(filter.flush());
+        assert_eq!(String::from_utf8_lossy(&out), "\x1b[32mok\x1b[0m\n");
+    }
 }

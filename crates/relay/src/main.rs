@@ -435,6 +435,14 @@ fn main() {
         libc::ioctl(libc::STDIN_FILENO, libc::TIOCGWINSZ, &mut size);
     }
 
+    unsafe {
+        let mut termios: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(libc::STDIN_FILENO, &mut termios) == 0 {
+            libc::cfmakeraw(&mut termios);
+            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios);
+        }
+    }
+
     let mut master: libc::c_int = 0;
     let pid = unsafe { libc::forkpty(&mut master, ptr::null_mut(), ptr::null(), &size) };
     if pid < 0 {

@@ -1672,7 +1672,7 @@ dependencies = [
 
 [[package]]
 name = "like-terminal"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1715,7 +1715,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lt-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "dirs",
  "keyring",
@@ -1727,14 +1727,14 @@ dependencies = [
 
 [[package]]
 name = "lt-relay"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "lt-sftp"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "russh",
  "russh-sftp",
@@ -1745,7 +1745,7 @@ dependencies = [
 
 [[package]]
 name = "lt-ssh"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "lt-core",
  "thiserror",

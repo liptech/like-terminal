@@ -5,6 +5,14 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.2.2] - 2026-11-09
+
+### Corrigido
+- O relay agora desliga o echo do próprio terminal de entrada antes de abrir o PTY filho.
+  Na 0.2.1 o modo raw era aplicado só no lado do `ssh`, mas o terminal do relay ainda
+  ecoava a digitação localmente, então a senha continuava visível em prompts de senha
+  (`felipe.mendes@host's password:`).
+
 ## [0.2.1] - 2026-11-09
 
 ### Corrigido

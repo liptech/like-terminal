@@ -1,0 +1,34 @@
+# Changelog
+
+Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
+
+O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
+este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
+
+## [Não publicado]
+
+### Adicionado
+- Realce de saída configurável: regras editáveis (palavra-chave, cor, negrito, ignorar
+  maiúsculas/minúsculas) e coloração opcional de endereços IPv4, em Preferências →
+  Realce.
+- Relay PTY robusto em UTF-8 (acentos e `nocase` preservados em chunks arbitrários).
+- Log de sessão com timestamps por linha e toggle de pausa/retomada (SIGUSR1).
+- Persistência de splits (até 8 painéis) e do estado do broadcast entre sessões.
+- Snippets: comandos salvos com busca e envio a um painel ou a todos.
+- Importação de hosts de `~/.ssh/config` (alias, host, usuário, porta, chave).
+
+## [0.1.0] - 2026-11-05
+
+### Adicionado
+- Janela GTK4/libadwaita com abas e painéis divididos.
+- Terminal local e conexões SSH via OpenSSH (senha, chave, agente, teclado interativo).
+- Perfis de terminal (fonte, paleta, scrollback, cursor).
+- Busca no histórico, zoom e copiar/colar.
+- Broadcast de texto para todos os painéis.
+- Gerenciador de sessões com pastas aninhadas e busca.
+- Conexão rápida por `usuario@host:porta` ou nome de sessão.
+- Preferências (perfil padrão, confirmação de fechamento).
+- Realce de saída por relay PTY (palavras-chave padrão e IPs).
+- Ícone da marca e metadados (`.desktop`, metainfo).
+- Documentos de licença, termos e privacidade.
+- Empacotamento `.deb` e Flatpak.

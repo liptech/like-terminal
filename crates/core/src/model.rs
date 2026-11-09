@@ -26,6 +26,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_bind_address() -> String {
+    "127.0.0.1".to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Store {
@@ -333,6 +337,74 @@ pub struct AuthOptions {
     pub save_password: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ForwardKind {
+    #[default]
+    Local,
+    Remote,
+    Dynamic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForwardRule {
+    pub kind: ForwardKind,
+    #[serde(default = "default_bind_address")]
+    pub bind_address: String,
+    pub bind_port: u16,
+    #[serde(default)]
+    pub target_host: String,
+    #[serde(default = "default_port")]
+    pub target_port: u16,
+}
+
+impl Default for ForwardRule {
+    fn default() -> Self {
+        Self {
+            kind: ForwardKind::Local,
+            bind_address: default_bind_address(),
+            bind_port: 0,
+            target_host: String::new(),
+            target_port: default_port(),
+        }
+    }
+}
+
+impl ForwardRule {
+    pub fn problem(&self) -> Option<&'static str> {
+        if self.bind_port == 0 {
+            return Some("Informe a porta.");
+        }
+        if self.kind != ForwardKind::Dynamic && self.target_host.trim().is_empty() {
+            return Some("Informe o host de destino.");
+        }
+        if self.kind != ForwardKind::Dynamic && self.target_port == 0 {
+            return Some("Informe a porta de destino.");
+        }
+        if self
+            .target_host
+            .chars()
+            .any(|c| c.is_whitespace() || c == '/' || c == '@')
+        {
+            return Some("Host de destino inválido.");
+        }
+        if self.bind_address.is_empty() {
+            return Some("Informe o endereço de escuta.");
+        }
+        None
+    }
+
+    pub fn summary(&self) -> String {
+        match self.kind {
+            ForwardKind::Dynamic => format!("{}:{} (SOCKS)", self.bind_address, self.bind_port),
+            _ => format!(
+                "{}:{} → {}:{}",
+                self.bind_address, self.bind_port, self.target_host, self.target_port
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SshOptions {
@@ -342,6 +414,7 @@ pub struct SshOptions {
     pub x11: bool,
     pub keepalive: u32,
     pub extra_args: Vec<String>,
+    pub forwards: Vec<ForwardRule>,
 }
 
 impl Default for SshOptions {
@@ -353,6 +426,7 @@ impl Default for SshOptions {
             x11: false,
             keepalive: default_keepalive(),
             extra_args: Vec::new(),
+            forwards: Vec::new(),
         }
     }
 }
@@ -687,5 +761,85 @@ mod tests {
         let session: Session = serde_json::from_str(json).unwrap();
         assert!(!session.log_enabled);
         assert!(session.log_dir.is_none());
+    }
+
+    #[test]
+    fn forward_rule_round_trips() {
+        let rule = ForwardRule {
+            kind: ForwardKind::Remote,
+            bind_address: "0.0.0.0".to_string(),
+            bind_port: 8080,
+            target_host: "10.0.0.5".to_string(),
+            target_port: 80,
+        };
+        let json = serde_json::to_string(&rule).unwrap();
+        let decoded: ForwardRule = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, rule);
+        assert!(json.contains("\"remote\""));
+    }
+
+    #[test]
+    fn legacy_ssh_options_get_empty_forwards() {
+        let json = r#"{"jump":null,"compression":false,"agent_forward":false,"x11":false,"keepalive":30,"extra_args":[]}"#;
+        let options: SshOptions = serde_json::from_str(json).unwrap();
+        assert!(options.forwards.is_empty());
+    }
+
+    #[test]
+    fn forward_rule_problem_accepts_valid_rule() {
+        let rule = ForwardRule {
+            kind: ForwardKind::Local,
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 8080,
+            target_host: "10.0.0.5".to_string(),
+            target_port: 80,
+        };
+        assert_eq!(rule.problem(), None);
+
+        let dynamic = ForwardRule {
+            kind: ForwardKind::Dynamic,
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 1080,
+            target_host: String::new(),
+            target_port: 0,
+        };
+        assert_eq!(dynamic.problem(), None);
+    }
+
+    #[test]
+    fn forward_rule_problem_rejects_port_zero_and_empty_host() {
+        let mut rule = ForwardRule {
+            kind: ForwardKind::Local,
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 0,
+            target_host: "10.0.0.5".to_string(),
+            target_port: 80,
+        };
+        assert_eq!(rule.problem(), Some("Informe a porta."));
+
+        rule.bind_port = 8080;
+        rule.target_host = "  ".to_string();
+        assert_eq!(rule.problem(), Some("Informe o host de destino."));
+    }
+
+    #[test]
+    fn forward_rule_summary_for_local_and_dynamic() {
+        let local = ForwardRule {
+            kind: ForwardKind::Local,
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 8080,
+            target_host: "10.0.0.5".to_string(),
+            target_port: 80,
+        };
+        assert_eq!(local.summary(), "127.0.0.1:8080 → 10.0.0.5:80");
+
+        let dynamic = ForwardRule {
+            kind: ForwardKind::Dynamic,
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 1080,
+            target_host: String::new(),
+            target_port: 0,
+        };
+        assert_eq!(dynamic.summary(), "127.0.0.1:1080 (SOCKS)");
     }
 }

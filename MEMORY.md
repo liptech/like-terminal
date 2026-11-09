@@ -119,9 +119,17 @@ Ordem aprovada pelo usuário; SFTP incluído na 0.2; regras de realce só palavr
 4. Persistência de splits e broadcast — concluído
 5. Snippets — concluído
 6. Importar `~/.ssh/config` — concluído
-7. Port forwarding e cadeia de jump hosts
+7. Port forwarding e cadeia de jump hosts — concluído
 8. SFTP dois painéis (crate `ssh2`)
-9. CI, README, CHANGELOG, tag v0.2.0 e release
+9. CI, README, CHANGELOG, tag v0.2.0 e release — parcial (README e CHANGELOG prontos)
+
+### Estado da fase 7
+
+- Modelo em `lt-core`: `ForwardKind {Local, Remote, Dynamic}` e `ForwardRule {kind, bind_address, bind_port, target_host, target_port}` com `problem()` e `summary()`; `SshOptions.forwards` com `serde(default)`. Testes de round-trip, defaults legados e validação.
+- `lt-ssh`: `build()` emite `-L`, `-R` e `-D` para regras válidas (antes do destino); `-J` aceita cadeia separada por vírgula. Testes cobrindo os três tipos e regra inválida ignorada.
+- UI: `crates/app/src/session_dialog.rs` ganhou o campo "Encaminhamento de portas" (botão mostra "Nenhuma"/"1 regra"/"N regras"); `crates/app/src/forwards_dialog.rs` (novo, escrito pelo Beam Free) lista regras com `summary()`, permite adicionar/editar/excluir em diálogo próprio (tipo, endereço, porta, destino, porta de destino; destino desabilitado em SOCKS) e valida via `problem()`.
+- Validado no Xvfb: regra `127.0.0.1:8080 → 10.0.0.5:80` salva em `sessions.json` como `{"kind":"local","bind_address":"127.0.0.1","bind_port":8080,"target_host":"10.0.0.5","target_port":80}`.
+- Testes totais: 35 core + 16 relay + 32 ssh = 83.
 
 ### Estado da fase 1
 

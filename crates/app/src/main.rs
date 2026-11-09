@@ -1,6 +1,7 @@
 mod app;
 mod askpass;
 mod document;
+mod forwards_dialog;
 mod highlight_page;
 mod panes;
 mod preferences;

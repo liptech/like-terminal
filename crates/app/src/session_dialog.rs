@@ -5,7 +5,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use lt_core::{validate_session, AuthMethod, Session, Store};
+use lt_core::{validate_session, AuthMethod, ForwardRule, Session, Store};
 
 pub fn show<F>(
     parent: &adw::ApplicationWindow,
@@ -119,6 +119,21 @@ pub fn show<F>(
     x11.set_halign(gtk::Align::Start);
     attach(&grid, &mut row, "X11 forwarding", &x11);
 
+    let forwards: Rc<RefCell<Vec<ForwardRule>>> = Rc::new(RefCell::new(
+        existing
+            .as_ref()
+            .map(|session| session.ssh.forwards.clone())
+            .unwrap_or_default(),
+    ));
+    let forwards_button = gtk::Button::with_label(&forwards_label(&forwards.borrow()));
+    forwards_button.set_halign(gtk::Align::Start);
+    attach(
+        &grid,
+        &mut row,
+        "Encaminhamento de portas",
+        &forwards_button,
+    );
+
     let extra = gtk::Entry::new();
     extra.set_hexpand(true);
     extra.set_placeholder_text(Some("separados por espaço"));
@@ -187,6 +202,25 @@ pub fn show<F>(
     }
 
     let on_save = Rc::new(on_save);
+    {
+        let dialog = dialog.clone();
+        let forwards = forwards.clone();
+        let label = forwards_button.clone();
+        forwards_button.connect_clicked(move |_| {
+            let current = forwards.borrow().clone();
+            let forwards = forwards.clone();
+            let label = label.clone();
+            crate::forwards_dialog::show(
+                &dialog,
+                current,
+                Rc::new(move |rules: Vec<ForwardRule>| {
+                    *forwards.borrow_mut() = rules;
+                    label.set_label(&forwards_label(&forwards.borrow()));
+                }),
+            );
+        });
+    }
+
     let save_dialog = dialog.clone();
     save.connect_clicked(move |_| {
         let mut session = existing.clone().unwrap_or_else(|| Session::new("", ""));
@@ -209,6 +243,7 @@ pub fn show<F>(
         session.ssh.compression = compression.is_active();
         session.ssh.agent_forward = agent_forward.is_active();
         session.ssh.x11 = x11.is_active();
+        session.ssh.forwards = forwards.borrow().clone();
         session.ssh.extra_args = extra
             .text()
             .split_whitespace()
@@ -317,4 +352,12 @@ where
 
     dialog.present();
     entry.grab_focus();
+}
+
+fn forwards_label(rules: &[ForwardRule]) -> String {
+    match rules.len() {
+        0 => "Nenhuma".to_string(),
+        1 => "1 regra".to_string(),
+        count => format!("{count} regras"),
+    }
 }

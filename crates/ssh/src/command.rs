@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use lt_core::{AuthMethod, Session};
+use lt_core::{AuthMethod, ForwardKind, Session};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +160,34 @@ pub fn build(session: &Session, askpass: Option<&AskpassSpec>) -> Result<Command
         args.push(extra.to_string());
     }
 
+    for rule in session
+        .ssh
+        .forwards
+        .iter()
+        .filter(|rule| rule.problem().is_none())
+    {
+        match rule.kind {
+            ForwardKind::Local => {
+                args.push("-L".into());
+                args.push(format!(
+                    "{}:{}:{}:{}",
+                    rule.bind_address, rule.bind_port, rule.target_host, rule.target_port
+                ));
+            }
+            ForwardKind::Remote => {
+                args.push("-R".into());
+                args.push(format!(
+                    "{}:{}:{}:{}",
+                    rule.bind_address, rule.bind_port, rule.target_host, rule.target_port
+                ));
+            }
+            ForwardKind::Dynamic => {
+                args.push("-D".into());
+                args.push(format!("{}:{}", rule.bind_address, rule.bind_port));
+            }
+        }
+    }
+
     args.push(session.host.clone());
 
     let mut env = vec![
@@ -290,5 +318,61 @@ mod tests {
         let mut session = session();
         session.user = "ad min".into();
         assert_eq!(build(&session, None), Err(BuildError::InvalidUser));
+    }
+
+    #[test]
+    fn local_forward_is_added() {
+        let mut session = session();
+        session.ssh.forwards.push(lt_core::ForwardRule {
+            kind: lt_core::ForwardKind::Local,
+            bind_address: "127.0.0.1".into(),
+            bind_port: 8080,
+            target_host: "10.0.0.5".into(),
+            target_port: 80,
+        });
+        let args = args(&session);
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-L" && pair[1] == "127.0.0.1:8080:10.0.0.5:80"));
+    }
+
+    #[test]
+    fn dynamic_forward_is_added() {
+        let mut session = session();
+        session.ssh.forwards.push(lt_core::ForwardRule {
+            kind: lt_core::ForwardKind::Dynamic,
+            bind_address: "127.0.0.1".into(),
+            bind_port: 1080,
+            target_host: String::new(),
+            target_port: 0,
+        });
+        let args = args(&session);
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-D" && pair[1] == "127.0.0.1:1080"));
+    }
+
+    #[test]
+    fn invalid_forward_is_ignored() {
+        let mut session = session();
+        session.ssh.forwards.push(lt_core::ForwardRule {
+            kind: lt_core::ForwardKind::Local,
+            bind_address: "127.0.0.1".into(),
+            bind_port: 0,
+            target_host: "10.0.0.5".into(),
+            target_port: 80,
+        });
+        let args = args(&session);
+        assert!(!args.iter().any(|arg| arg == "-L"));
+    }
+
+    #[test]
+    fn jump_chain_with_commas_is_preserved() {
+        let mut session = session();
+        session.ssh.jump = Some("a,b".into());
+        let args = args(&session);
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-J" && pair[1] == "a,b"));
     }
 }

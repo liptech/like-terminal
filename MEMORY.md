@@ -187,3 +187,9 @@ Publicação (GitHub release/Flathub) ainda depende de um remote.
 Telnet/serial, transparência e imagem de fundo, múltiplas janelas e tear-off de abas,
 codificação de caracteres, senha mestra, sync de sessões, i18n (gettext), AppImage,
 publicação no Flathub.
+
+## Publicação
+
+- Repositório público: https://github.com/liptech/like-terminal (remote `origin`, branch `main`).
+- Tag `v0.2.0` e release com os anexos `like-terminal_0.2.0_amd64.deb` (2,2 MB) e `like-terminal.flatpak` (3,0 MB).
+- Artefatos são gerados por `./packaging/build-deb.sh` e pelo `flatpak-builder` + `flatpak build-bundle`; todos ficam no `.gitignore`.

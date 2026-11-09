@@ -259,6 +259,35 @@ impl PaneView {
         });
         group.add_action(&paste);
 
+        let weak_log = weak.clone();
+        let toggle_log = gio::SimpleAction::new("toggle-log", None);
+        toggle_log.connect_activate(move |_, _| {
+            if let Some(pane) = weak_log.upgrade() {
+                if let Some(view) = pane.active() {
+                    view.toggle_log();
+                }
+                (pane.on_state)();
+            }
+        });
+        group.add_action(&toggle_log);
+
+        let weak_logs = weak.clone();
+        let open_logs = gio::SimpleAction::new("open-logs", None);
+        open_logs.connect_activate(move |_, _| {
+            if let Some(pane) = weak_logs.upgrade() {
+                if let Some(view) = pane.active() {
+                    let directory = view.log_directory();
+                    let _ = std::fs::create_dir_all(&directory);
+                    let uri = gtk::gio::File::for_path(&directory).uri();
+                    let _ = gtk::gio::AppInfo::launch_default_for_uri(
+                        &uri,
+                        None::<&gtk::gio::AppLaunchContext>,
+                    );
+                }
+            }
+        });
+        group.add_action(&open_logs);
+
         let weak_find = weak;
         let find = gio::SimpleAction::new("find", None);
         find.connect_activate(move |_, _| {
@@ -278,6 +307,11 @@ impl PaneView {
         edit_section.append(Some("Colar"), Some("pane.paste"));
         edit_section.append(Some("Buscar…"), Some("pane.find"));
         menu.append_section(None, &edit_section);
+
+        let log_section = gio::Menu::new();
+        log_section.append(Some("Iniciar/parar log"), Some("pane.toggle-log"));
+        log_section.append(Some("Abrir pasta de logs"), Some("pane.open-logs"));
+        menu.append_section(None, &log_section);
 
         let close_section = gio::Menu::new();
         close_section.append(Some("Fechar painel"), Some("pane.close"));

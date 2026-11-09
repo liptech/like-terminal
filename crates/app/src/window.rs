@@ -16,6 +16,8 @@ use crate::sidebar::{Sidebar, SidebarCallbacks};
 use crate::state::{self, UiState};
 
 const CSD_SHADOW: i32 = 5;
+const MIN_WINDOW_WIDTH: i32 = 480;
+const MIN_WINDOW_HEIGHT: i32 = 320;
 
 thread_local! {
     static WINDOW: RefCell<Option<Rc<Window>>> = const { RefCell::new(None) };
@@ -361,9 +363,15 @@ impl Window {
         self.window.connect_close_request(move |window| {
             if let Some(window_ref) = weak.upgrade() {
                 window_ref.save_store();
+                let width = window.width() + CSD_SHADOW * 2;
+                let height = window.height() + CSD_SHADOW * 2;
                 let ui = UiState {
-                    width: window.width() + CSD_SHADOW * 2,
-                    height: window.height() + CSD_SHADOW * 2,
+                    width: if width >= MIN_WINDOW_WIDTH { width } else { 0 },
+                    height: if height >= MIN_WINDOW_HEIGHT {
+                        height
+                    } else {
+                        0
+                    },
                     maximized: window.is_maximized(),
                     sidebar: window_ref.split.shows_sidebar(),
                     open_sessions: window_ref.open_session_ids(),
@@ -382,9 +390,15 @@ impl Window {
     }
 
     fn save_ui_state(&self) {
+        let width = self.window.width() + CSD_SHADOW * 2;
+        let height = self.window.height() + CSD_SHADOW * 2;
         let ui = UiState {
-            width: self.window.width() + CSD_SHADOW * 2,
-            height: self.window.height() + CSD_SHADOW * 2,
+            width: if width >= MIN_WINDOW_WIDTH { width } else { 0 },
+            height: if height >= MIN_WINDOW_HEIGHT {
+                height
+            } else {
+                0
+            },
             maximized: self.window.is_maximized(),
             sidebar: self.split.shows_sidebar(),
             open_sessions: self.open_session_ids(),
@@ -688,7 +702,13 @@ impl Window {
             return;
         };
 
-        self.status_label.set_text(&terminal.session.address());
+        let logging = terminal.logging();
+        let address = terminal.session.address();
+        self.status_label.set_text(&if logging {
+            format!("{address} · log")
+        } else {
+            address
+        });
         let (text, exited) = match terminal.state() {
             crate::terminal::ConnState::Connecting => ("Conectando…", false),
             crate::terminal::ConnState::Connected => ("Conectado", false),

@@ -24,6 +24,8 @@ pub struct TerminalView {
     pub terminal: vte4::Terminal,
     state: Rc<Cell<ConnState>>,
     search_tag: Cell<i32>,
+    pid: Rc<Cell<Option<glib::Pid>>>,
+    log_active: Cell<bool>,
 }
 
 impl TerminalView {
@@ -47,9 +49,9 @@ impl TerminalView {
                 command.args.clear();
             }
         }
-        if profile.highlight_output {
-            if let Some(relay) = relay_path() {
-                let mut args = Vec::new();
+        if let Some(relay) = relay_path() {
+            let mut args = Vec::new();
+            if profile.highlight_output {
                 if let Some(spec) = &highlight.spec {
                     args.push("--rules".to_string());
                     args.push(spec.clone());
@@ -57,14 +59,17 @@ impl TerminalView {
                 if highlight.ips {
                     args.push("--ips".to_string());
                 }
-                if !args.is_empty() {
-                    args.push("--".to_string());
-                    args.push(command.program);
-                    args.extend(command.args);
-                    command.program = relay;
-                    command.args = args;
-                }
             }
+            args.push("--log".to_string());
+            args.push(session.log_path().display().to_string());
+            if !session.log_enabled {
+                args.push("--log-paused".to_string());
+            }
+            args.push("--".to_string());
+            args.push(command.program);
+            args.extend(command.args);
+            command.program = relay;
+            command.args = args;
         }
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -80,6 +85,8 @@ impl TerminalView {
             terminal,
             state: state.clone(),
             search_tag: Cell::new(-1),
+            pid: Rc::new(Cell::new(None)),
+            log_active: Cell::new(session.log_enabled),
         });
 
         setup_links(&view.terminal);
@@ -107,6 +114,7 @@ impl TerminalView {
         let envv: Vec<&str> = env_strings.iter().map(String::as_str).collect();
         let home = dirs::home_dir().map(|path| path.display().to_string());
 
+        let pid_slot = self.pid.clone();
         let terminal = self.terminal.clone();
         let terminal_cb = terminal.clone();
         let on_state_ok = on_state.clone();
@@ -123,6 +131,7 @@ impl TerminalView {
             None::<&gio::Cancellable>,
             move |result| match result {
                 Ok(pid) => {
+                    pid_slot.set(Some(pid));
                     terminal_cb.watch_child(pid);
                     state.set(ConnState::Connected);
                     on_state_ok(ConnState::Connected);
@@ -189,6 +198,25 @@ impl TerminalView {
             self.search_tag.set(tag);
         }
         self.terminal.search_find_next()
+    }
+
+    pub fn logging(&self) -> bool {
+        self.log_active.get()
+    }
+
+    pub fn log_directory(&self) -> PathBuf {
+        self.session.log_directory()
+    }
+
+    pub fn toggle_log(&self) -> bool {
+        if let Some(pid) = self.pid.get() {
+            unsafe {
+                libc::kill(pid.0, libc::SIGUSR1);
+            }
+            let next = !self.log_active.get();
+            self.log_active.set(next);
+        }
+        self.log_active.get()
     }
 
     pub fn clear_highlight(&self) {

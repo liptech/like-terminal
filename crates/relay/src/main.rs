@@ -1,6 +1,8 @@
 use std::ffi::CString;
+use std::fs::File;
 use std::io::Write;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const ESC: u8 = 0x1b;
 
@@ -115,6 +117,175 @@ impl Filter {
     }
 }
 
+static LOG_TOGGLE: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn toggle_log(_signal: libc::c_int) {
+    LOG_TOGGLE.store(true, Ordering::Relaxed);
+}
+
+struct Logger {
+    file: Option<File>,
+    path: Option<String>,
+    timestamps: bool,
+    enabled: bool,
+    at_line_start: bool,
+    pending: Vec<u8>,
+}
+
+impl Logger {
+    fn closed() -> Self {
+        Self {
+            file: None,
+            path: None,
+            timestamps: false,
+            enabled: false,
+            at_line_start: true,
+            pending: Vec::new(),
+        }
+    }
+
+    fn open(path: &str, timestamps: bool, enabled: bool) -> std::io::Result<Self> {
+        unsafe {
+            let handler: extern "C" fn(libc::c_int) = toggle_log;
+            libc::signal(libc::SIGUSR1, handler as *const () as libc::sighandler_t);
+        }
+        Ok(Self {
+            file: None,
+            path: Some(path.to_string()),
+            timestamps,
+            enabled,
+            at_line_start: true,
+            pending: Vec::new(),
+        })
+    }
+
+    fn write(&mut self, data: &[u8]) {
+        if self.path.is_none() {
+            return;
+        }
+        let mut buffer = std::mem::take(&mut self.pending);
+        buffer.extend_from_slice(data);
+        let mut index = 0;
+        while index < buffer.len() {
+            let byte = buffer[index];
+            if byte == ESC {
+                let Some(end) = log_sequence_end(&buffer, index) else {
+                    break;
+                };
+                index = end;
+                continue;
+            }
+            if byte == b'\r' {
+                index += 1;
+                continue;
+            }
+            if byte == b'\n' {
+                self.write_text(b"\n");
+                index += 1;
+                continue;
+            }
+            let start = index;
+            while index < buffer.len()
+                && buffer[index] != b'\n'
+                && buffer[index] != b'\r'
+                && buffer[index] != ESC
+            {
+                index += 1;
+            }
+            self.write_text(&buffer[start..index]);
+        }
+        self.pending = buffer[index..].to_vec();
+    }
+
+    fn write_text(&mut self, text: &[u8]) {
+        if LOG_TOGGLE.swap(false, Ordering::Relaxed) {
+            self.enabled = !self.enabled;
+        }
+        if !self.enabled {
+            return;
+        }
+        if self.file.is_none() {
+            let Some(path) = self.path.as_deref() else {
+                return;
+            };
+            if let Some(parent) = std::path::Path::new(path).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match File::create(path) {
+                Ok(file) => self.file = Some(file),
+                Err(_) => return,
+            }
+        }
+        let Some(file) = self.file.as_mut() else {
+            return;
+        };
+        if self.at_line_start && self.timestamps && text != b"\n" {
+            let _ = file.write_all(iso_now().as_bytes());
+        }
+        let _ = file.write_all(text);
+        self.at_line_start = text.ends_with(b"\n");
+    }
+
+    fn flush(&mut self) {
+        let pending = std::mem::take(&mut self.pending);
+        if !pending.is_empty() {
+            self.write_text(&pending);
+        }
+        if let Some(file) = self.file.as_mut() {
+            let _ = file.flush();
+        }
+    }
+}
+
+fn iso_now() -> String {
+    unsafe {
+        let mut now: libc::time_t = 0;
+        libc::time(&mut now);
+        let mut parts: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut parts);
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} ",
+            parts.tm_year + 1900,
+            parts.tm_mon + 1,
+            parts.tm_mday,
+            parts.tm_hour,
+            parts.tm_min,
+            parts.tm_sec
+        )
+    }
+}
+
+fn log_sequence_end(buffer: &[u8], start: usize) -> Option<usize> {
+    match buffer.get(start + 1) {
+        Some(b'[') => {
+            let mut index = start + 2;
+            while index < buffer.len() {
+                let byte = buffer[index];
+                index += 1;
+                if (0x40..=0x7e).contains(&byte) {
+                    return Some(index);
+                }
+            }
+            None
+        }
+        Some(b']') => {
+            let mut index = start + 2;
+            while index < buffer.len() {
+                if buffer[index] == 0x07 {
+                    return Some(index + 1);
+                }
+                if buffer[index] == ESC && buffer.get(index + 1) == Some(&b'\\') {
+                    return Some(index + 2);
+                }
+                index += 1;
+            }
+            None
+        }
+        Some(_) => Some((start + 2).min(buffer.len())),
+        None => None,
+    }
+}
+
 fn escape_end(buffer: &[u8], start: usize) -> usize {
     let mut index = start + 1;
     if buffer.get(index) == Some(&b'[') {
@@ -202,6 +373,9 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut rules = Vec::new();
     let mut color_ips = false;
+    let mut log_path: Option<String> = None;
+    let mut log_timestamps = true;
+    let mut log_enabled = true;
     let mut command = Vec::new();
     let mut index = 1;
     while index < args.len() {
@@ -224,6 +398,18 @@ fn main() {
                 color_ips = true;
                 index += 1;
             }
+            "--log" => {
+                log_path = args.get(index + 1).cloned();
+                index += 2;
+            }
+            "--log-raw" => {
+                log_timestamps = false;
+                index += 1;
+            }
+            "--log-paused" => {
+                log_enabled = false;
+                index += 1;
+            }
             "--" => {
                 command.extend(args[index + 1..].iter().cloned());
                 break;
@@ -234,7 +420,7 @@ fn main() {
 
     if command.is_empty() {
         eprintln!(
-            "uso: like-terminal-relay [--rules 'Chave=#rrggbb[:bold][:nocase];...'] [--rules-file arquivo] [--ips] -- comando [args]"
+            "uso: like-terminal-relay [--rules 'Chave=#rrggbb[:bold][:nocase];...'] [--rules-file arquivo] [--ips] [--log arquivo [--log-raw] [--log-paused]] -- comando [args]"
         );
         std::process::exit(2);
     }
@@ -271,10 +457,33 @@ fn main() {
         std::process::exit(127);
     }
 
-    relay(master, pid, Filter::new(rules, color_ips), size);
+    let mut logger = match log_path {
+        Some(path) => match Logger::open(&path, log_timestamps, log_enabled) {
+            Ok(logger) => logger,
+            Err(error) => {
+                eprintln!("like-terminal-relay: falha ao abrir log {path}: {error}");
+                Logger::closed()
+            }
+        },
+        None => Logger::closed(),
+    };
+
+    relay(
+        master,
+        pid,
+        Filter::new(rules, color_ips),
+        size,
+        &mut logger,
+    );
 }
 
-fn relay(master: libc::c_int, pid: libc::pid_t, mut filter: Filter, mut size: libc::winsize) {
+fn relay(
+    master: libc::c_int,
+    pid: libc::pid_t,
+    mut filter: Filter,
+    mut size: libc::winsize,
+    logger: &mut Logger,
+) {
     let stdout = std::io::stdout();
     let mut output = stdout.lock();
     let mut status: libc::c_int = 0;
@@ -330,6 +539,7 @@ fn relay(master: libc::c_int, pid: libc::pid_t, mut filter: Filter, mut size: li
                     let read =
                         unsafe { libc::read(master, buffer.as_mut_ptr().cast(), buffer.len()) };
                     if read > 0 {
+                        logger.write(&buffer[..read as usize]);
                         let bytes = filter.feed(&buffer[..read as usize]);
                         if !bytes.is_empty() {
                             let _ = output.write_all(&bytes);
@@ -359,6 +569,7 @@ fn relay(master: libc::c_int, pid: libc::pid_t, mut filter: Filter, mut size: li
     }
 
     let _ = unsafe { libc::waitpid(pid, &mut status, 0) };
+    logger.flush();
     let bytes = filter.flush();
     if !bytes.is_empty() {
         let _ = output.write_all(&bytes);
@@ -532,5 +743,85 @@ mod tests {
         let mut out = filter.feed(b"\x1b[32mok\x1b[0m\n");
         out.extend(filter.flush());
         assert_eq!(String::from_utf8_lossy(&out), "\x1b[32mok\x1b[0m\n");
+    }
+
+    fn temp_path(name: &str) -> String {
+        let unique = format!(
+            "lt-relay-test-{}-{}-{name}.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        std::env::temp_dir()
+            .join("lt-relay-tests")
+            .join(unique)
+            .display()
+            .to_string()
+    }
+
+    #[test]
+    fn log_strips_escape_sequences() {
+        let path = temp_path("plain");
+        let mut logger = Logger::open(&path, false, true).unwrap();
+        logger.write(b"\x1b[32mok\x1b[0m\r\nsegunda linha\n");
+        logger.flush();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "ok\nsegunda linha\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn log_prefixes_iso_timestamps() {
+        let path = temp_path("stamps");
+        let mut logger = Logger::open(&path, true, true).unwrap();
+        logger.write(b"a\nb\n");
+        logger.flush();
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        for line in lines {
+            assert_eq!(line.len(), 20 + 1, "{line:?}");
+            assert_eq!(&line[4..5], "-");
+            assert_eq!(&line[10..11], "T");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn log_waits_for_enable_signal() {
+        let path = temp_path("paused");
+        let mut logger = Logger::open(&path, false, false).unwrap();
+        logger.write(b"inativo\n");
+        logger.flush();
+        assert!(!std::path::Path::new(&path).exists());
+        logger.enabled = true;
+        logger.write(b"ativo\n");
+        logger.flush();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "ativo\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn log_strips_osc_titles() {
+        let path = temp_path("osc");
+        let mut logger = Logger::open(&path, false, true).unwrap();
+        logger.write(b"\x1b]0;titulo\x07ok\n");
+        logger.write(b"\x1b]2;outro\x1b\\fim\n");
+        logger.flush();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "ok\nfim\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn log_keeps_split_escape_across_chunks() {
+        let path = temp_path("escape");
+        let mut logger = Logger::open(&path, false, true).unwrap();
+        logger.write(b"\x1b[3");
+        logger.write(b"2mok\n");
+        logger.flush();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "ok\n");
+        let _ = std::fs::remove_file(&path);
     }
 }

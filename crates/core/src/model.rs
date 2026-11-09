@@ -201,6 +201,10 @@ pub struct Session {
     pub terminal: TerminalOptions,
     #[serde(default)]
     pub color: Option<String>,
+    #[serde(default)]
+    pub log_enabled: bool,
+    #[serde(default)]
+    pub log_dir: Option<String>,
 }
 
 impl Session {
@@ -216,6 +220,8 @@ impl Session {
             ssh: SshOptions::default(),
             terminal: TerminalOptions::default(),
             color: None,
+            log_enabled: false,
+            log_dir: None,
         }
     }
 
@@ -233,6 +239,38 @@ impl Session {
         } else {
             format!("{}:{}", self.target(), self.port)
         }
+    }
+
+    pub fn log_directory(&self) -> std::path::PathBuf {
+        match self.log_dir.as_deref().filter(|dir| !dir.trim().is_empty()) {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => dirs::state_dir()
+                .or_else(dirs::data_local_dir)
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("like-terminal")
+                .join("logs"),
+        }
+    }
+
+    pub fn log_path(&self) -> std::path::PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        let slug: String = self
+            .name
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    ch.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let slug = slug.trim_matches('-');
+        let slug = if slug.is_empty() { "sessao" } else { slug };
+        self.log_directory().join(format!("{slug}-{stamp}.log"))
     }
 
     pub fn is_local(&self) -> bool {
@@ -587,5 +625,31 @@ mod tests {
         assert_eq!(store.matching_sessions("10.0").len(), 1);
         assert_eq!(store.matching_sessions("adm").len(), 1);
         assert_eq!(store.matching_sessions("nope").len(), 0);
+    }
+
+    #[test]
+    fn log_path_is_slugged_under_configured_directory() {
+        let mut session = Session::new("Switch SFP 01", "10.0.0.1");
+        session.log_dir = Some("/tmp/lt-logs".to_string());
+        let path = session.log_path();
+        assert_eq!(path.parent().unwrap(), std::path::Path::new("/tmp/lt-logs"));
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        assert!(name.starts_with("switch-sfp-01-"), "{name}");
+        assert!(name.ends_with(".log"), "{name}");
+    }
+
+    #[test]
+    fn log_path_defaults_to_state_directory() {
+        let session = Session::new("Teste", "10.0.0.1");
+        let path = session.log_path();
+        assert!(path.components().any(|part| part.as_os_str() == "logs"));
+    }
+
+    #[test]
+    fn legacy_session_gets_log_defaults() {
+        let json = r#"{"id":"11111111-1111-4111-8111-111111111111","name":"x","host":""}"#;
+        let session: Session = serde_json::from_str(json).unwrap();
+        assert!(!session.log_enabled);
+        assert!(session.log_dir.is_none());
     }
 }

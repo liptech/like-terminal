@@ -9,6 +9,7 @@ name = "like-terminal"
 path = "src/main.rs"
 
 [dependencies]
+libc = "0.2"
 lt-core.workspace = true
 lt-ssh.workspace = true
 anyhow.workspace = true

@@ -968,6 +968,7 @@ dependencies = [
  "glib",
  "gtk4",
  "libadwaita",
+ "libc",
  "lt-core",
  "lt-ssh",
  "serde",

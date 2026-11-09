@@ -87,6 +87,14 @@ impl Window {
                     }
                 })
             },
+            sftp: {
+                let window_ref = window_ref.clone();
+                Rc::new(move |id| {
+                    if let Some(window) = window_ref.borrow().upgrade() {
+                        window.open_sftp(id);
+                    }
+                })
+            },
             edit: {
                 let window_ref = window_ref.clone();
                 Rc::new(move |id| {
@@ -879,6 +887,60 @@ impl Window {
             window.save_store();
             window.sidebar.update(&window.store.borrow());
         });
+    }
+
+    fn open_sftp(&self, id: Uuid) {
+        let Some(session) = self.store.borrow().session(id).cloned() else {
+            return;
+        };
+        if session.is_local() {
+            self.toast("Sessões locais não abrem SFTP.");
+            return;
+        }
+        let user = if session.user.trim().is_empty() {
+            std::env::var("USER").unwrap_or_else(|_| "root".to_string())
+        } else {
+            session.user.clone()
+        };
+        let auth = match session.auth.method {
+            lt_core::AuthMethod::PublicKey => {
+                let path = session
+                    .auth
+                    .key_path
+                    .clone()
+                    .map(|path| crate::terminal::expand_path(&path))
+                    .unwrap_or_else(|| {
+                        crate::terminal::expand_path(std::path::Path::new("~/.ssh/id_ed25519"))
+                    });
+                lt_sftp::AuthSpec::Key {
+                    path,
+                    passphrase: None,
+                }
+            }
+            lt_core::AuthMethod::Agent => lt_sftp::AuthSpec::Agent,
+            _ => {
+                let secret = if session.auth.save_password {
+                    use lt_core::{account_password, SecretStore};
+                    lt_core::KeyringStore::new()
+                        .get(&account_password(session.id))
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                };
+                match secret {
+                    Some(password) => lt_sftp::AuthSpec::Password(password),
+                    None => lt_sftp::AuthSpec::Agent,
+                }
+            }
+        };
+        let config = lt_sftp::SftpConfig {
+            host: session.host.clone(),
+            port: session.port,
+            user,
+            auth,
+        };
+        crate::sftp_window::show(&self.window, session.name.clone(), config);
     }
 
     fn duplicate_session(&self, id: Uuid) {

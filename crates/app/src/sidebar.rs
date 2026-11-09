@@ -8,6 +8,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct SidebarCallbacks {
     pub connect: Rc<dyn Fn(Uuid)>,
+    pub sftp: Rc<dyn Fn(Uuid)>,
     pub edit: Rc<dyn Fn(Uuid)>,
     pub duplicate: Rc<dyn Fn(Uuid)>,
     pub delete_session: Rc<dyn Fn(Uuid)>,
@@ -254,6 +255,11 @@ impl Sidebar {
         group.add_action(&action);
 
         let callbacks = self.callbacks.clone();
+        let action = gio::SimpleAction::new("sftp", None);
+        action.connect_activate(move |_, _| (callbacks.sftp)(id));
+        group.add_action(&action);
+
+        let callbacks = self.callbacks.clone();
         let action = gio::SimpleAction::new("edit", None);
         action.connect_activate(move |_, _| (callbacks.edit)(id));
         group.add_action(&action);
@@ -272,6 +278,7 @@ impl Sidebar {
 
         let menu = gio::Menu::new();
         menu.append(Some("Conectar"), Some("row.connect"));
+        menu.append(Some("Abrir SFTP"), Some("row.sftp"));
         menu.append(Some("Editar"), Some("row.edit"));
         menu.append(Some("Duplicar"), Some("row.duplicate"));
         let delete_section = gio::Menu::new();

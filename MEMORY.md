@@ -164,6 +164,17 @@ e `tree()` em `panes.rs`, `restore_tabs`/`open_layout`/`open_layouts` em `window
 gravação do estado quando a árvore de painéis muda (`on_state` chama `save_ui_state`).
 Validado no Xvfb: H[leaf, V[leaf, leaf]] + "Todas as abas" sobrevivem ao fechar e reabrir.
 
+### Estado da fase 8
+
+Concluída: crate `lt-sftp` sobre `russh`/`russh-sftp` (worker tokio, autenticação por
+senha/chave/agente, `known_hosts`, transferências em blocos de 64 KiB) e janela de dois
+painéis `crates/app/src/sftp_window.rs` (navegação local/remota, enviar/baixar, nova pasta,
+renomear, excluir, desconectar; threads só trocam dados `Send` com a UI via canal + timeout
+local). Aberta pelo menu da sessão ("Abrir SFTP") quando a sessão não é local.
+Validado no Xvfb contra `10.175.5.4` (usuário `ubuntu`, chave): home, listagem, criação de
+pasta, upload, download, rename e exclusão. Corrigido `request_subsystem(true, "sftp")`
+antes de `SftpSession::new` (sem isso o subsistema fica em timeout).
+
 ## Backlog pós-0.2
 
 Telnet/serial, transparência e imagem de fundo, múltiplas janelas e tear-off de abas,

@@ -12,6 +12,7 @@ path = "src/main.rs"
 libc = "0.2"
 lt-core.workspace = true
 lt-ssh.workspace = true
+lt-sftp.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
 serde.workspace = true

@@ -495,3 +495,13 @@ fn link_at(terminal: &vte4::Terminal, x: f64, y: f64) -> Option<String> {
     };
     Some(format!("file://{}", path.display()))
 }
+
+pub fn expand_path(path: &std::path::Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir()
+            .map(|home| home.join(rest))
+            .unwrap_or_else(|| path.to_path_buf()),
+        None => path.to_path_buf(),
+    }
+}

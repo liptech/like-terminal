@@ -6,6 +6,7 @@ mod highlight_page;
 mod panes;
 mod preferences;
 mod session_dialog;
+mod sftp_window;
 mod sidebar;
 mod snippets;
 mod ssh_import;

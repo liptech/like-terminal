@@ -443,6 +443,13 @@ fn main() {
     }
 
     if pid == 0 {
+        unsafe {
+            let mut termios: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(libc::STDIN_FILENO, &mut termios) == 0 {
+                libc::cfmakeraw(&mut termios);
+                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios);
+            }
+        }
         let program = CString::new(command[0].clone()).unwrap_or_default();
         let mut argv: Vec<CString> = command
             .iter()

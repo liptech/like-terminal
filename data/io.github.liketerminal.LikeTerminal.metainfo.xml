@@ -39,6 +39,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.1" date="2026-11-09">
+      <description>
+        <p>Correção: o PTY do relay inicia em modo raw, evitando que senhas e digitação apareçam na tela.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-11-09">
       <description>
         <p>Realce de saída configurável, log de sessão, snippets, importação de ~/.ssh/config, encaminhamento de portas e navegador SFTP.</p>

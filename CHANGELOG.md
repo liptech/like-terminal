@@ -5,6 +5,13 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.2.1] - 2026-11-09
+
+### Corrigido
+- O PTY interno do relay agora inicia em modo raw, igual ao terminal do app. Antes ele
+  subia em modo canônico com echo ligado, fazendo o servidor herdar `ECHO` e exibir a
+  senha (e qualquer digitação) em aparelhos cujo CLI não desliga o eco.
+
 ## [0.2.0] - 2026-11-09
 
 ### Adicionado

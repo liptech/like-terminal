@@ -175,6 +175,13 @@ Validado no Xvfb contra `10.175.5.4` (usuário `ubuntu`, chave): home, listagem,
 pasta, upload, download, rename e exclusão. Corrigido `request_subsystem(true, "sftp")`
 antes de `SftpSession::new` (sem isso o subsistema fica em timeout).
 
+### Estado da fase 9
+
+Versão 0.2.0: `Cargo.toml` do workspace e `Cargo.lock`, release no metainfo, `CHANGELOG.md`
+e `README.md` atualizados, tag anotada `v0.2.0` e workflow de CI em
+`.github/workflows/ci.yml` (fmt, clippy com `-D warnings`, testes em ubuntu-24.04).
+Publicação (GitHub release/Flathub) ainda depende de um remote.
+
 ## Backlog pós-0.2
 
 Telnet/serial, transparência e imagem de fundo, múltiplas janelas e tear-off de abas,

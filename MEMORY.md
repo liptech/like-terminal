@@ -117,8 +117,8 @@ Ordem aprovada pelo usuário; SFTP incluído na 0.2; regras de realce só palavr
 2. Relay robusto UTF-8 — concluído (teste de acentos e `nocase`)
 3. Log de sessão — concluído
 4. Persistência de splits e broadcast — concluído
-5. Snippets
-6. Importar `~/.ssh/config`
+5. Snippets — concluído
+6. Importar `~/.ssh/config` — concluído
 7. Port forwarding e cadeia de jump hosts
 8. SFTP dois painéis (crate `ssh2`)
 9. CI, README, CHANGELOG, tag v0.2.0 e release
@@ -131,6 +131,22 @@ serde), `parse_rules` com `bold`/`nocase` + `--rules-file` no relay, integraçã
 `crates/app/src/highlight_page.rs` (CRUD de palavras, cor, negrito, ignorar caixa,
 switch de IPs), hook `set_highlight` em `preferences.rs`/`window.rs`, testes de
 `HighlightRule::spec`/`problem`, `Store` legado e `highlight_config`.
+
+### Estado da fase 5
+
+Concluída: `lt_core::Snippet` (nome, texto, `send_enter`, validação por `problem()`),
+`Store.snippets` + `Store::snippet(id)`, `crates/app/src/snippets.rs` (`show_manager`
+com CRUD e `show_picker` com busca; envio por clique via `GestureClick` e Enter via
+`row_activated`), atalho `Ctrl+Shift+S`, ações `app.snippets`/`app.manage-snippets` em
+`window.rs` (envia ao painel ativo ou a todos os painéis quando o broadcast está ligado).
+
+### Estado da fase 6
+
+Concluída: `lt_ssh::config` (`ConfigEntry`, `parse`, `read_default`; Hosts múltiplos,
+`=`/espaço/tab, aspas, continuação, primeiro valor vence), `crates/app/src/ssh_import.rs`
+(diálogo com checkboxes e conversão para `Session`, `AuthMethod::PublicKey` quando há
+`IdentityFile`) e ação `app.import-ssh-config` com filtro de aliases já existentes.
+Validado no Xvfb com o `~/.ssh/config` real: 14 sessões importadas.
 
 ### Estado da fase 4
 

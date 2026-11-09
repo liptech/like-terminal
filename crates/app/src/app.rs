@@ -42,6 +42,7 @@ fn register_accels(app: &adw::Application) {
         ("app.about", &[]),
         ("app.quit", &["<Control>q"]),
         ("app.broadcast", &["<Control><Shift>b"]),
+        ("app.snippets", &["<Control><Shift>s"]),
     ];
 
     for (action, keys) in accels {

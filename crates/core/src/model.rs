@@ -36,6 +36,7 @@ pub struct Store {
     pub settings: Settings,
     pub highlight_rules: Vec<HighlightRule>,
     pub highlight_ips: bool,
+    pub snippets: Vec<Snippet>,
 }
 
 impl Default for Store {
@@ -48,6 +49,7 @@ impl Default for Store {
             settings: Settings::default(),
             highlight_rules: default_highlight_rules(),
             highlight_ips: true,
+            snippets: Vec::new(),
         }
     }
 }
@@ -81,6 +83,10 @@ impl Store {
 
     pub fn default_profile(&self) -> &Profile {
         self.profile(&self.settings.default_profile)
+    }
+
+    pub fn snippet(&self, id: Uuid) -> Option<&Snippet> {
+        self.snippets.iter().find(|snippet| snippet.id == id)
     }
 
     pub fn highlight_config(&self) -> HighlightConfig {
@@ -368,6 +374,36 @@ impl Default for TerminalOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snippet {
+    pub id: Uuid,
+    pub name: String,
+    pub text: String,
+    #[serde(default = "default_true")]
+    pub send_enter: bool,
+}
+
+impl Snippet {
+    pub fn new(name: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            text: text.into(),
+            send_enter: true,
+        }
+    }
+
+    pub fn problem(&self) -> Option<&'static str> {
+        if self.name.trim().is_empty() {
+            return Some("Informe um nome para o snippet.");
+        }
+        if self.text.trim().is_empty() {
+            return Some("Informe o texto do snippet.");
+        }
+        None
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profile {
     pub id: String,

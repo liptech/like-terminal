@@ -160,6 +160,10 @@ impl TerminalView {
         self.terminal.grab_focus();
     }
 
+    pub fn send(&self, text: &str) {
+        self.terminal.feed_child(text.as_bytes());
+    }
+
     pub fn send_line(&self, text: &str) {
         self.terminal.feed_child(text.as_bytes());
         self.terminal.feed_child(b"\r");

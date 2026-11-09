@@ -6,6 +6,8 @@ mod panes;
 mod preferences;
 mod session_dialog;
 mod sidebar;
+mod snippets;
+mod ssh_import;
 mod state;
 mod style;
 mod terminal;

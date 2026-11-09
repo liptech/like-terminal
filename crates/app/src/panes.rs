@@ -481,6 +481,17 @@ impl PaneView {
         }
     }
 
+    pub fn broadcast_raw(&self, text: &str) {
+        let layout = self.layout.borrow();
+        if let Some(layout) = layout.as_ref() {
+            for view in leaves(layout) {
+                if view.is_running() {
+                    view.send(text);
+                }
+            }
+        }
+    }
+
     pub fn broadcast(&self, text: &str) {
         let layout = self.layout.borrow();
         if let Some(layout) = layout.as_ref() {

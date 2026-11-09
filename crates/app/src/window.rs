@@ -166,6 +166,12 @@ impl Window {
         let menu = gio::Menu::new();
         menu.append(Some("Nova sessão"), Some("app.new-session"));
         menu.append(Some("Nova pasta"), Some("app.new-folder"));
+        menu.append(Some("Aplicar snippet"), Some("app.snippets"));
+        menu.append(Some("Gerenciar snippets"), Some("app.manage-snippets"));
+        menu.append(
+            Some("Importar de ~/.ssh/config"),
+            Some("app.import-ssh-config"),
+        );
         let preferences_section = gio::Menu::new();
         preferences_section.append(Some("Preferências"), Some("app.preferences"));
         preferences_section.append(Some("Atalhos"), Some("app.shortcuts"));
@@ -481,6 +487,13 @@ impl Window {
         add_action(app, self, "broadcast", |window| {
             window.broadcast.set_active(!window.broadcast.is_active());
             window.send_entry.grab_focus();
+        });
+        add_action(app, self, "snippets", |window| window.show_snippets());
+        add_action(app, self, "import-ssh-config", |window| {
+            window.import_ssh_config()
+        });
+        add_action(app, self, "manage-snippets", |window| {
+            window.manage_snippets()
         });
         add_action(app, self, "preferences", |window| window.open_preferences());
         add_action(app, self, "shortcuts", |window| window.show_shortcuts());
@@ -968,6 +981,91 @@ impl Window {
             },
             || {},
         );
+    }
+
+    fn show_snippets(&self) {
+        let store = self.store.borrow().clone();
+        let weak = Rc::downgrade(&self.as_rc());
+        let on_send = Rc::new(move |snippet: lt_core::Snippet| {
+            if let Some(window) = weak.upgrade() {
+                window.apply_snippet(&snippet);
+            }
+        });
+        let weak = Rc::downgrade(&self.as_rc());
+        let on_manage = Rc::new(move || {
+            if let Some(window) = weak.upgrade() {
+                window.manage_snippets();
+            }
+        });
+        crate::snippets::show_picker(&self.window, &store, on_send, on_manage);
+    }
+
+    fn import_ssh_config(&self) {
+        let known: Vec<String> = self
+            .store
+            .borrow()
+            .sessions
+            .iter()
+            .map(|session| session.name.to_lowercase())
+            .collect();
+        let entries: Vec<lt_ssh::config::ConfigEntry> = lt_ssh::config::read_default()
+            .into_iter()
+            .filter(|entry| !known.contains(&entry.alias.to_lowercase()))
+            .collect();
+
+        if entries.is_empty() {
+            self.toast("Nenhuma sessão nova em ~/.ssh/config");
+            return;
+        }
+
+        let weak = Rc::downgrade(&self.as_rc());
+        let on_import = Rc::new(move |sessions: Vec<lt_core::Session>| {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            let count = sessions.len();
+            {
+                let mut store = window.store.borrow_mut();
+                store.sessions.extend(sessions);
+            }
+            window.save_store();
+            window.sidebar.update(&window.store.borrow());
+            window.toast(&format!("{count} sessões importadas"));
+        });
+        crate::ssh_import::show(&self.window, entries, on_import);
+    }
+
+    fn manage_snippets(&self) {
+        let store = self.store.borrow().clone();
+        let weak = Rc::downgrade(&self.as_rc());
+        let on_change = Rc::new(move |snippets: Vec<lt_core::Snippet>| {
+            if let Some(window) = weak.upgrade() {
+                window.store.borrow_mut().snippets = snippets;
+                window.save_store();
+            }
+        });
+        crate::snippets::show_manager(&self.window, &store, on_change);
+    }
+
+    fn apply_snippet(&self, snippet: &lt_core::Snippet) {
+        if self.broadcast.is_active() {
+            for (_, pane) in self.panes.borrow().iter() {
+                if snippet.send_enter {
+                    pane.broadcast(&snippet.text);
+                } else {
+                    pane.broadcast_raw(&snippet.text);
+                }
+            }
+            return;
+        }
+
+        if let Some(terminal) = self.active_pane().and_then(|pane| pane.active()) {
+            if snippet.send_enter {
+                terminal.send_line(&snippet.text);
+            } else {
+                terminal.send(&snippet.text);
+            }
+        }
     }
 
     fn open_preferences(&self) {

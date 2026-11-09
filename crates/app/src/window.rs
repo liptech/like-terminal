@@ -308,7 +308,8 @@ impl Window {
         window.sidebar.update(&window.store.borrow());
         window.register_app_actions();
         window.wire_events(&quick_button, &send_button);
-        window.restore_sessions(&ui.open_sessions);
+        window.broadcast.set_active(ui.broadcast);
+        window.restore_tabs(&ui);
         window.refresh_status();
 
         Ok(window)
@@ -375,6 +376,8 @@ impl Window {
                     maximized: window.is_maximized(),
                     sidebar: window_ref.split.shows_sidebar(),
                     open_sessions: window_ref.open_session_ids(),
+                    tabs: window_ref.open_layouts(),
+                    broadcast: window_ref.broadcast.is_active(),
                 };
                 state::save(&state_path, &ui);
             }
@@ -383,6 +386,13 @@ impl Window {
 
         let weak = Rc::downgrade(&self.as_rc());
         self.tabs.connect_n_pages_notify(move |_| {
+            if let Some(window) = weak.upgrade() {
+                window.save_ui_state();
+            }
+        });
+
+        let weak = Rc::downgrade(&self.as_rc());
+        self.broadcast.connect_toggled(move |_| {
             if let Some(window) = weak.upgrade() {
                 window.save_ui_state();
             }
@@ -402,6 +412,8 @@ impl Window {
             maximized: self.window.is_maximized(),
             sidebar: self.split.shows_sidebar(),
             open_sessions: self.open_session_ids(),
+            tabs: self.open_layouts(),
+            broadcast: self.broadcast.is_active(),
         };
         state::save(&self.paths.state, &ui);
     }
@@ -542,6 +554,7 @@ impl Window {
         let on_state = Rc::new(move || {
             if let Some(window) = weak.upgrade() {
                 window.refresh_status();
+                window.save_ui_state();
             }
         });
 
@@ -720,6 +733,16 @@ impl Window {
         }
     }
 
+    fn restore_tabs(&self, ui: &UiState) {
+        if ui.tabs.is_empty() {
+            self.restore_sessions(&ui.open_sessions);
+            return;
+        }
+        for tree in &ui.tabs {
+            self.open_layout(tree.clone().normalize());
+        }
+    }
+
     fn restore_sessions(&self, ids: &[Uuid]) {
         let sessions: Vec<Session> = {
             let store = self.store.borrow();
@@ -730,6 +753,71 @@ impl Window {
         for session in sessions {
             self.open_session(session);
         }
+    }
+
+    fn open_layout(&self, tree: lt_core::PaneLayout) {
+        let store = self.store.clone();
+        let resolve = move |id: Uuid| store.borrow().session(id).cloned();
+        let base = match tree.first_session().and_then(&resolve) {
+            Some(session) => session,
+            None => return,
+        };
+        let profile = {
+            let store = self.store.borrow();
+            store.profile(&base.terminal.profile).clone()
+        };
+        let highlight = self.store.borrow().highlight_config();
+
+        let page_holder: Rc<RefCell<Option<adw::TabPage>>> = Rc::new(RefCell::new(None));
+        let weak = Rc::downgrade(&self.as_rc());
+        let on_close = {
+            let weak = weak.clone();
+            let page_holder = page_holder.clone();
+            Rc::new(move || {
+                if let Some(window) = weak.upgrade() {
+                    if let Some(page) = page_holder.borrow().clone() {
+                        window.tabs.close_page(&page);
+                    }
+                }
+            })
+        };
+        let on_state = Rc::new(move || {
+            if let Some(window) = weak.upgrade() {
+                window.refresh_status();
+                window.save_ui_state();
+            }
+        });
+
+        let Some(pane) = PaneView::with_tree(
+            tree,
+            &resolve,
+            profile,
+            highlight,
+            self.exe.clone(),
+            on_close,
+            on_state,
+        ) else {
+            self.restore_sessions(&[base.id]);
+            return;
+        };
+
+        let page = self.tabs.add_page(&pane.root, None);
+        page.set_title(&base.name);
+        page.set_tooltip(&base.subtitle());
+        page.set_icon(Some(&gio::ThemedIcon::new("utilities-terminal-symbolic")));
+        *page_holder.borrow_mut() = Some(page.clone());
+
+        self.panes.borrow_mut().push((page.clone(), pane.clone()));
+        self.tabs.set_selected_page(&page);
+        self.refresh_status();
+    }
+
+    fn open_layouts(&self) -> Vec<lt_core::PaneLayout> {
+        self.panes
+            .borrow()
+            .iter()
+            .filter_map(|(_, pane)| pane.tree())
+            .collect()
     }
 
     fn open_session_ids(&self) -> Vec<Uuid> {

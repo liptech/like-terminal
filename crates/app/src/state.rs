@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use lt_core::PaneLayout;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -11,6 +12,8 @@ pub struct UiState {
     pub maximized: bool,
     pub sidebar: bool,
     pub open_sessions: Vec<Uuid>,
+    pub tabs: Vec<PaneLayout>,
+    pub broadcast: bool,
 }
 
 impl Default for UiState {
@@ -21,6 +24,8 @@ impl Default for UiState {
             maximized: false,
             sidebar: true,
             open_sessions: Vec::new(),
+            tabs: Vec::new(),
+            broadcast: false,
         }
     }
 }

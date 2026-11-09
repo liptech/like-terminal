@@ -113,10 +113,10 @@ cargo fmt --all
 
 Ordem aprovada pelo usuário; SFTP incluído na 0.2; regras de realce só palavra-chave.
 
-1. Realce configurável (regras editáveis) — **em andamento**
+1. Realce configurável (regras editáveis) — concluído
 2. Relay robusto UTF-8 — concluído (teste de acentos e `nocase`)
-3. Log de sessão
-4. Persistência de splits e broadcast
+3. Log de sessão — concluído
+4. Persistência de splits e broadcast — concluído
 5. Snippets
 6. Importar `~/.ssh/config`
 7. Port forwarding e cadeia de jump hosts
@@ -131,6 +131,14 @@ serde), `parse_rules` com `bold`/`nocase` + `--rules-file` no relay, integraçã
 `crates/app/src/highlight_page.rs` (CRUD de palavras, cor, negrito, ignorar caixa,
 switch de IPs), hook `set_highlight` em `preferences.rs`/`window.rs`, testes de
 `HighlightRule::spec`/`problem`, `Store` legado e `highlight_config`.
+
+### Estado da fase 4
+
+Concluída: `lt_core::PaneLayout`/`SplitAxis` (`crates/core/src/layout.rs`, limite de 8
+painéis, ratios clampados, `normalize()`), `UiState.tabs`/`broadcast`, `PaneView::with_tree`
+e `tree()` em `panes.rs`, `restore_tabs`/`open_layout`/`open_layouts` em `window.rs` e
+gravação do estado quando a árvore de painéis muda (`on_state` chama `save_ui_state`).
+Validado no Xvfb: H[leaf, V[leaf, leaf]] + "Todas as abas" sobrevivem ao fechar e reabrir.
 
 ## Backlog pós-0.2
 

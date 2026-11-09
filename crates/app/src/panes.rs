@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk::prelude::*;
-use lt_core::{HighlightConfig, Profile, Session};
+use lt_core::{HighlightConfig, PaneLayout, Profile, Session, SplitAxis};
 use uuid::Uuid;
 
 use crate::terminal::{ConnState, TerminalView};
@@ -45,6 +45,46 @@ impl PaneView {
         on_close: Rc<dyn Fn()>,
         on_state: Rc<dyn Fn()>,
     ) -> Result<Rc<Self>, lt_ssh::BuildError> {
+        let first = TerminalView::new(&session, &profile, &highlight, exe.clone(), {
+            let on_state = on_state.clone();
+            Rc::new(move |_state: ConnState| on_state())
+        })?;
+        Ok(Self::assemble(
+            session,
+            profile,
+            highlight,
+            exe,
+            Layout::Leaf(first),
+            on_close,
+            on_state,
+        ))
+    }
+
+    pub fn with_tree(
+        tree: PaneLayout,
+        resolve: &dyn Fn(Uuid) -> Option<Session>,
+        profile: Profile,
+        highlight: HighlightConfig,
+        exe: PathBuf,
+        on_close: Rc<dyn Fn()>,
+        on_state: Rc<dyn Fn()>,
+    ) -> Option<Rc<Self>> {
+        let base = resolve(tree.first_session()?)?;
+        let layout = build_layout(&tree, resolve, &profile, &highlight, &exe, &on_state)?;
+        Some(Self::assemble(
+            base, profile, highlight, exe, layout, on_close, on_state,
+        ))
+    }
+
+    fn assemble(
+        session: Session,
+        profile: Profile,
+        highlight: HighlightConfig,
+        exe: PathBuf,
+        layout: Layout,
+        on_close: Rc<dyn Fn()>,
+        on_state: Rc<dyn Fn()>,
+    ) -> Rc<Self> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.set_hexpand(true);
         root.set_vexpand(true);
@@ -71,10 +111,7 @@ impl PaneView {
         root.append(&container);
         root.append(&search_bar);
 
-        let first = TerminalView::new(&session, &profile, &highlight, exe.clone(), {
-            let on_state = on_state.clone();
-            Rc::new(move |_state: ConnState| on_state())
-        })?;
+        let active = leaves(&layout).first().map(|view| (*view).clone());
 
         let pane = Rc::new(Self {
             root,
@@ -85,8 +122,8 @@ impl PaneView {
             container,
             search_bar,
             search_entry,
-            layout: RefCell::new(Some(Layout::Leaf(first.clone()))),
-            active: RefCell::new(Some(first)),
+            layout: RefCell::new(Some(layout)),
+            active: RefCell::new(active),
             attached: RefCell::new(HashSet::new()),
             me: RefCell::new(std::rc::Weak::new()),
             on_close,
@@ -96,7 +133,14 @@ impl PaneView {
 
         pane.rebuild();
         pane.wire_search(&previous, &next);
-        Ok(pane)
+        if let Some(view) = pane.active.borrow().clone() {
+            view.root.add_css_class("active-pane");
+        }
+        pane
+    }
+
+    pub fn tree(&self) -> Option<PaneLayout> {
+        self.layout.borrow().as_ref().map(layout_tree)
     }
 
     fn wire_search(&self, previous: &gtk::Button, next: &gtk::Button) {
@@ -626,6 +670,73 @@ fn remove_in(layout: Layout, target: Uuid) -> (Option<Layout>, bool) {
                 }),
                 false,
             )
+        }
+    }
+}
+
+fn layout_tree(layout: &Layout) -> PaneLayout {
+    match layout {
+        Layout::Leaf(view) => PaneLayout::leaf(view.session.id),
+        Layout::Split {
+            orientation,
+            ratio,
+            start,
+            end,
+        } => PaneLayout::split(
+            if *orientation == gtk::Orientation::Horizontal {
+                SplitAxis::Horizontal
+            } else {
+                SplitAxis::Vertical
+            },
+            *ratio,
+            layout_tree(start),
+            layout_tree(end),
+        ),
+    }
+}
+
+fn build_layout(
+    tree: &PaneLayout,
+    resolve: &dyn Fn(Uuid) -> Option<Session>,
+    profile: &Profile,
+    highlight: &HighlightConfig,
+    exe: &PathBuf,
+    on_state: &Rc<dyn Fn()>,
+) -> Option<Layout> {
+    match tree {
+        PaneLayout::Leaf { session } => {
+            let session = resolve(*session)?;
+            let on_state = on_state.clone();
+            let view = TerminalView::new(&session, profile, highlight, exe.clone(), {
+                let on_state = on_state.clone();
+                Rc::new(move |_state: ConnState| on_state())
+            })
+            .ok()?;
+            Some(Layout::Leaf(view))
+        }
+        PaneLayout::Split {
+            axis,
+            ratio,
+            start,
+            end,
+        } => {
+            let left = build_layout(start, resolve, profile, highlight, exe, on_state);
+            let right = build_layout(end, resolve, profile, highlight, exe, on_state);
+            let (start, end) = match (left, right) {
+                (Some(left), Some(right)) => (left, right),
+                (Some(left), None) => return Some(left),
+                (None, Some(right)) => return Some(right),
+                (None, None) => return None,
+            };
+            Some(Layout::Split {
+                orientation: match axis {
+                    SplitAxis::Horizontal => gtk::Orientation::Horizontal,
+                    SplitAxis::Vertical => gtk::Orientation::Vertical,
+                },
+                ratio: *ratio,
+                start: Box::new(start),
+                end: Box::new(end),
+            })
         }
     }
 }

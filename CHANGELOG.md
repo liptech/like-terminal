@@ -5,6 +5,14 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.4.1] - 2026-11-11
+
+### Corrigido
+
+- Sessões VNC e RDP abrem apenas clientes dedicados (`vncviewer`/`xtigervncviewer` e `xfreerdp`/`xfreerdp3`); o Remmina deixou de ser usado.
+- Clientes VNC/RDP são aguardados em segundo plano, evitando processos zumbis.
+- O pacote `.deb` passou a depender de `freerdp3-x11 | freerdp2-x11` e `tigervnc-viewer`.
+
 ## [0.4.0] - 2026-11-11
 
 ### Adicionado

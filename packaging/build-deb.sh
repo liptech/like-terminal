@@ -34,7 +34,7 @@ Section: x11
 Priority: optional
 Architecture: amd64
 Maintainer: Felipe Mendes <liptech@users.noreply.github.com>
-Depends: libc6, libgcc-s1, libglib2.0-0t64 | libglib2.0-0, libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.5), libvte-2.91-gtk4-0 (>= 0.76), libpango-1.0-0, libdbus-1-3, openssh-client
+Depends: libc6, libgcc-s1, libglib2.0-0t64 | libglib2.0-0, libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.5), libvte-2.91-gtk4-0 (>= 0.76), libpango-1.0-0, libdbus-1-3, openssh-client, freerdp3-x11 | freerdp2-x11, tigervnc-viewer
 Recommends: fish
 Description: Terminal GTK4 com abas, paineis divididos e conexoes SSH
  Like Terminal e um emulador de terminal para GNOME com abas,

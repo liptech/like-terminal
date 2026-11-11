@@ -872,16 +872,20 @@ impl Window {
         let port = desktop.effective_port();
         let sandboxed = std::path::Path::new("/.flatpak-info").exists();
         let candidates: &[&str] = match desktop.protocol {
-            lt_core::DesktopProtocol::Vnc => &["vncviewer", "xtigervncviewer", "remmina"],
-            lt_core::DesktopProtocol::Rdp => &["xfreerdp", "xfreerdp3", "remmina"],
+            lt_core::DesktopProtocol::Vnc => &["vncviewer", "xtigervncviewer"],
+            lt_core::DesktopProtocol::Rdp => &["xfreerdp", "xfreerdp3"],
         };
         let Some(client) = candidates
             .iter()
             .find(|name| crate::terminal::find_in_path(name).is_some())
         else {
             self.toast(&format!(
-                "Instale um cliente {} (vncviewer, xfreerdp ou remmina) para abrir esta sessão.",
-                desktop.protocol.label()
+                "Cliente {} não encontrado. Instale com: sudo apt install {}",
+                desktop.protocol.label(),
+                match desktop.protocol {
+                    lt_core::DesktopProtocol::Vnc => "tigervnc-viewer",
+                    lt_core::DesktopProtocol::Rdp => "freerdp3-x11",
+                }
             ));
             return;
         };
@@ -889,29 +893,31 @@ impl Window {
         let mut args: Vec<String> = Vec::new();
         match desktop.protocol {
             lt_core::DesktopProtocol::Vnc => {
-                if *client == "remmina" {
-                    args.push("-c".to_string());
-                    args.push(format!("vnc://{}:{}", session.host, port));
-                } else {
-                    args.push(format!("{}:{}", session.host, port));
-                }
+                args.push(format!("{}::{}", session.host, port));
             }
             lt_core::DesktopProtocol::Rdp => {
-                if *client == "remmina" {
-                    args.push("-c".to_string());
-                    args.push(format!("rdp://{}:{}", session.host, port));
-                } else {
-                    args.push(format!("/v:{}:{}", session.host, port));
-                    if !session.user.trim().is_empty() {
-                        args.push(format!("/u:{}", session.user.trim()));
-                    }
-                    if !desktop.domain.trim().is_empty() {
-                        args.push(format!("/d:{}", desktop.domain.trim()));
-                    }
+                args.push(format!("/v:{}:{}", session.host, port));
+                if !session.user.trim().is_empty() {
+                    args.push(format!("/u:{}", session.user.trim()));
+                }
+                if !desktop.domain.trim().is_empty() {
+                    args.push(format!("/d:{}", desktop.domain.trim()));
                 }
             }
         }
         args.extend(desktop.extra_args.split_whitespace().map(str::to_string));
+
+        let mut password = None;
+        if matches!(desktop.protocol, lt_core::DesktopProtocol::Rdp) && session.auth.save_password {
+            use lt_core::secrets::SecretStore;
+            let secrets = lt_core::secrets::KeyringStore::new();
+            if let Ok(Some(secret)) = secrets.get(&lt_core::secrets::account_password(session.id)) {
+                password = Some(secret);
+            }
+        }
+        if password.is_some() {
+            args.push("/from-stdin".to_string());
+        }
 
         let mut command = if sandboxed {
             let mut command = std::process::Command::new("flatpak-spawn");
@@ -922,13 +928,26 @@ impl Window {
             std::process::Command::new(client)
         };
         command.args(&args);
+        if password.is_some() {
+            command.stdin(std::process::Stdio::piped());
+        }
         match command.spawn() {
-            Ok(_) => self.toast(&format!(
-                "Abrindo {} em {}:{}",
-                desktop.protocol.label(),
-                session.host,
-                port
-            )),
+            Ok(mut child) => {
+                if let (Some(secret), Some(mut input)) = (password, child.stdin.take()) {
+                    use std::io::Write;
+                    let _ = input.write_all(secret.as_bytes());
+                    let _ = input.write_all(b"\n");
+                }
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+                self.toast(&format!(
+                    "Abrindo {} em {}:{}",
+                    desktop.protocol.label(),
+                    session.host,
+                    port
+                ));
+            }
             Err(error) => self.toast(&format!("Falha ao abrir o cliente: {error}")),
         }
     }

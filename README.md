@@ -30,7 +30,7 @@ App ID: `io.github.liketerminal.LikeTerminal` · Binário: `like-terminal` · Au
 | SFTP | Navegador de dois painéis (local/remoto): listagem, navegação, criação/renomeação/exclusão e transferência de arquivos. |
 | Serial | Sessões em portas `/dev/ttyUSB*`, `/dev/ttyACM*` e `/dev/ttyS*`, com velocidade, bits, paridade, stop bits e controle de fluxo configuráveis. |
 | Telnet | Cliente embutido, com negociação de terminal feita pelo próprio relay. |
-| VNC e RDP | Abrem o cliente instalado (`vncviewer`, `xfreerdp` ou `remmina`) com host, porta, usuário, domínio e argumentos extras. |
+| VNC e RDP | Abrem `xtigervncviewer` ou `xfreerdp3` com host, porta, usuário, domínio e argumentos extras. O `.deb` já instala os dois clientes. |
 | Bloqueio do app | Senha local (Argon2) e verificação em duas etapas (TOTP) opcional. |
 | Log de sessão | Grava saída em arquivo, com timestamps e pausa/retomada. |
 | Persistência | Geometria da janela, abas e layout de painéis restaurados ao reabrir. |

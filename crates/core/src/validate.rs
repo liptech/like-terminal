@@ -25,6 +25,13 @@ pub fn validate_session(session: &Session) -> Vec<ValidationIssue> {
         ));
     }
 
+    if let Some(serial) = &session.serial {
+        if let Some(message) = serial.problem() {
+            issues.push(ValidationIssue::new("serial", message));
+        }
+        return issues;
+    }
+
     if session
         .host
         .chars()
@@ -130,6 +137,43 @@ mod tests {
         assert!(validate_session(&session)
             .iter()
             .any(|i| i.field == "key_path"));
+    }
+
+    #[test]
+    fn serial_session_uses_serial_options_only() {
+        let mut session = valid();
+        session.host.clear();
+        session.serial = Some(crate::model::SerialOptions {
+            port: "/dev/ttyUSB0".into(),
+            ..Default::default()
+        });
+        assert!(validate_session(&session).is_empty());
+    }
+
+    #[test]
+    fn serial_session_rejects_relative_port() {
+        let mut session = valid();
+        session.serial = Some(crate::model::SerialOptions {
+            port: "ttyUSB0".into(),
+            ..Default::default()
+        });
+        let issues = validate_session(&session);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "serial");
+    }
+
+    #[test]
+    fn serial_session_ignores_ssh_fields() {
+        let mut session = valid();
+        session.port = 0;
+        session.auth.method = AuthMethod::PublicKey;
+        session.auth.key_path = None;
+        session.ssh.jump = Some("a b".into());
+        session.serial = Some(crate::model::SerialOptions {
+            port: "/dev/ttyS0".into(),
+            ..Default::default()
+        });
+        assert!(validate_session(&session).is_empty());
     }
 
     #[test]

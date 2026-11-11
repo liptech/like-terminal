@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gtk::gio;
 use gtk::prelude::*;
-use lt_core::{AuthMethod, HighlightConfig, Profile, Session};
+use lt_core::{AuthMethod, HighlightConfig, Profile, SerialOptions, Session};
 use lt_ssh::{AskpassKind, AskpassSpec};
 use vte4::prelude::*;
 
@@ -41,36 +41,34 @@ impl TerminalView {
         terminal.set_vexpand(true);
         apply_profile(&terminal, profile);
 
-        let askpass = askpass_for(session, exe);
-        let mut command = lt_ssh::build(session, askpass.as_ref())?;
-        if session.is_local() && profile.syntax_highlight {
-            if let Some(fish) = find_in_path("fish") {
-                command.program = fish;
-                command.args.clear();
+        let command = if let Some(serial) = session.serial.as_ref() {
+            let relay = relay_path().ok_or(lt_ssh::BuildError::MissingRelay)?;
+            let mut args = relay_options(session, profile, highlight);
+            args.extend(serial_args(serial));
+            lt_ssh::CommandSpec {
+                program: relay,
+                args,
+                env: Vec::new(),
             }
-        }
-        if let Some(relay) = relay_path() {
-            let mut args = Vec::new();
-            if profile.highlight_output {
-                if let Some(spec) = &highlight.spec {
-                    args.push("--rules".to_string());
-                    args.push(spec.clone());
+        } else {
+            let askpass = askpass_for(session, exe);
+            let mut command = lt_ssh::build(session, askpass.as_ref())?;
+            if session.is_local() && profile.syntax_highlight {
+                if let Some(fish) = find_in_path("fish") {
+                    command.program = fish;
+                    command.args.clear();
                 }
-                if highlight.ips {
-                    args.push("--ips".to_string());
-                }
             }
-            args.push("--log".to_string());
-            args.push(session.log_path().display().to_string());
-            if !session.log_enabled {
-                args.push("--log-paused".to_string());
+            if let Some(relay) = relay_path() {
+                let mut args = relay_options(session, profile, highlight);
+                args.push("--".to_string());
+                args.push(command.program);
+                args.extend(command.args);
+                command.program = relay;
+                command.args = args;
             }
-            args.push("--".to_string());
-            args.push(command.program);
-            args.extend(command.args);
-            command.program = relay;
-            command.args = args;
-        }
+            command
+        };
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.add_css_class("terminal-frame");
@@ -433,6 +431,42 @@ fn relay_path() -> Option<String> {
         return Some(sibling.display().to_string());
     }
     find_in_path("like-terminal-relay")
+}
+
+fn relay_options(session: &Session, profile: &Profile, highlight: &HighlightConfig) -> Vec<String> {
+    let mut args = Vec::new();
+    if profile.highlight_output {
+        if let Some(spec) = &highlight.spec {
+            args.push("--rules".to_string());
+            args.push(spec.clone());
+        }
+        if highlight.ips {
+            args.push("--ips".to_string());
+        }
+    }
+    args.push("--log".to_string());
+    args.push(session.log_path().display().to_string());
+    if !session.log_enabled {
+        args.push("--log-paused".to_string());
+    }
+    args
+}
+
+fn serial_args(serial: &SerialOptions) -> Vec<String> {
+    vec![
+        "--serial".to_string(),
+        serial.port.clone(),
+        "--baud".to_string(),
+        serial.baud.to_string(),
+        "--databits".to_string(),
+        serial.data_bits.to_string(),
+        "--parity".to_string(),
+        serial.parity.name().to_string(),
+        "--stopbits".to_string(),
+        serial.stop_bits.to_string(),
+        "--flow".to_string(),
+        serial.flow.name().to_string(),
+    ]
 }
 
 fn find_in_path(name: &str) -> Option<String> {

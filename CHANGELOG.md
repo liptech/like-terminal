@@ -5,6 +5,17 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.3.0] - 2026-11-11
+
+### Adicionado
+
+- Sessões seriais com porta, velocidade, bits de dados, paridade, stop bits e controle de fluxo, usando ponte própria sobre `termios` (sem depender de `minicom`/`picocom`).
+- Tipo de conexão no diálogo de sessão (SSH/terminal local ou serial), com detecção de adaptadores em `/dev/serial/by-id` e `/dev/ttyUSB*`, `/dev/ttyACM*`, `/dev/ttyS*`.
+
+### Alterado
+
+- Flatpak passa a declarar `--device=all` para permitir acesso às portas seriais. No `.deb`, o usuário precisa pertencer ao grupo `dialout`.
+
 ## [0.2.3] - 2026-11-09
 
 ### Adicionado

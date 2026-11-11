@@ -49,6 +49,8 @@ pub enum BuildError {
     InvalidUser,
     #[error("chave privada não informada")]
     MissingKey,
+    #[error("componente de relay não encontrado")]
+    MissingRelay,
 }
 
 pub fn build(session: &Session, askpass: Option<&AskpassSpec>) -> Result<CommandSpec, BuildError> {

@@ -192,6 +192,130 @@ impl Folder {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SerialParity {
+    #[default]
+    None,
+    Even,
+    Odd,
+}
+
+impl SerialParity {
+    pub fn letter(self) -> &'static str {
+        match self {
+            Self::None => "N",
+            Self::Even => "E",
+            Self::Odd => "O",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Even => "even",
+            Self::Odd => "odd",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SerialFlow {
+    #[default]
+    None,
+    Software,
+    Hardware,
+}
+
+impl SerialFlow {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Software => "software",
+            Self::Hardware => "hardware",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SerialOptions {
+    #[serde(default)]
+    pub port: String,
+    #[serde(default = "default_baud")]
+    pub baud: u32,
+    #[serde(default = "default_data_bits")]
+    pub data_bits: u8,
+    #[serde(default)]
+    pub parity: SerialParity,
+    #[serde(default = "default_stop_bits")]
+    pub stop_bits: u8,
+    #[serde(default)]
+    pub flow: SerialFlow,
+}
+
+pub const SERIAL_BAUDS: &[u32] = &[
+    300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
+];
+
+fn default_baud() -> u32 {
+    9600
+}
+
+fn default_data_bits() -> u8 {
+    8
+}
+
+fn default_stop_bits() -> u8 {
+    1
+}
+
+impl Default for SerialOptions {
+    fn default() -> Self {
+        Self {
+            port: String::new(),
+            baud: default_baud(),
+            data_bits: default_data_bits(),
+            parity: SerialParity::None,
+            stop_bits: default_stop_bits(),
+            flow: SerialFlow::None,
+        }
+    }
+}
+
+impl SerialOptions {
+    pub fn problem(&self) -> Option<&'static str> {
+        let port = self.port.trim();
+        if port.is_empty() {
+            return Some("Informe a porta serial.");
+        }
+        if !port.starts_with('/') || port.chars().any(char::is_whitespace) {
+            return Some("Use o caminho completo do dispositivo, como /dev/ttyUSB0.");
+        }
+        if !SERIAL_BAUDS.contains(&self.baud) {
+            return Some("Selecione uma velocidade válida.");
+        }
+        if !(5..=8).contains(&self.data_bits) {
+            return Some("Os bits de dados devem estar entre 5 e 8.");
+        }
+        if !(1..=2).contains(&self.stop_bits) {
+            return Some("Os bits de parada devem ser 1 ou 2.");
+        }
+        None
+    }
+
+    pub fn summary(&self) -> String {
+        format!(
+            "{} · {} {}{}{}",
+            self.port.trim(),
+            self.baud,
+            self.data_bits,
+            self.parity.letter(),
+            self.stop_bits
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
@@ -215,6 +339,8 @@ pub struct Session {
     pub log_enabled: bool,
     #[serde(default)]
     pub log_dir: Option<String>,
+    #[serde(default)]
+    pub serial: Option<SerialOptions>,
 }
 
 impl Session {
@@ -232,6 +358,7 @@ impl Session {
             color: None,
             log_enabled: false,
             log_dir: None,
+            serial: None,
         }
     }
 
@@ -284,10 +411,17 @@ impl Session {
     }
 
     pub fn is_local(&self) -> bool {
-        self.host.trim().is_empty()
+        self.serial.is_none() && self.host.trim().is_empty()
+    }
+
+    pub fn is_serial(&self) -> bool {
+        self.serial.is_some()
     }
 
     pub fn subtitle(&self) -> String {
+        if let Some(serial) = &self.serial {
+            return serial.summary();
+        }
         if self.is_local() {
             return "Terminal local".to_string();
         }
@@ -844,5 +978,78 @@ mod tests {
             target_port: 0,
         };
         assert_eq!(dynamic.summary(), "127.0.0.1:1080 (SOCKS)");
+    }
+
+    #[test]
+    fn serial_options_round_trip() {
+        let serial = SerialOptions {
+            port: "/dev/ttyUSB0".to_string(),
+            baud: 115200,
+            data_bits: 7,
+            parity: SerialParity::Even,
+            stop_bits: 2,
+            flow: SerialFlow::Hardware,
+        };
+        let json = serde_json::to_string(&serial).unwrap();
+        let parsed: SerialOptions = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, serial);
+        assert_eq!(parsed.summary(), "/dev/ttyUSB0 · 115200 7E2");
+        assert_eq!(parsed.problem(), None);
+    }
+
+    #[test]
+    fn serial_options_defaults_to_9600_8n1() {
+        let serial = SerialOptions::default();
+        assert_eq!(serial.baud, 9600);
+        assert_eq!(serial.data_bits, 8);
+        assert_eq!(serial.parity, SerialParity::None);
+        assert_eq!(serial.stop_bits, 1);
+        assert_eq!(serial.flow, SerialFlow::None);
+        assert_eq!(serial.problem(), Some("Informe a porta serial."));
+
+        let parsed: SerialOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed, SerialOptions::default());
+    }
+
+    #[test]
+    fn serial_options_validate_port_and_bits() {
+        let mut serial = SerialOptions {
+            port: "/dev/ttyUSB0".to_string(),
+            ..SerialOptions::default()
+        };
+        assert_eq!(serial.problem(), None);
+
+        serial.port = "ttyUSB0".to_string();
+        assert!(serial.problem().is_some());
+
+        serial.port = "/dev/tty USB".to_string();
+        assert!(serial.problem().is_some());
+
+        serial.port = "/dev/ttyUSB0".to_string();
+        serial.baud = 12345;
+        assert!(serial.problem().is_some());
+
+        serial.baud = 9600;
+        serial.data_bits = 9;
+        assert!(serial.problem().is_some());
+
+        serial.data_bits = 8;
+        serial.stop_bits = 3;
+        assert!(serial.problem().is_some());
+    }
+
+    #[test]
+    fn serial_session_is_not_local_and_has_summary() {
+        let mut session = Session::new("Console", "");
+        assert!(session.is_local());
+        assert!(!session.is_serial());
+
+        session.serial = Some(SerialOptions {
+            port: "/dev/ttyS0".to_string(),
+            ..SerialOptions::default()
+        });
+        assert!(session.is_serial());
+        assert!(!session.is_local());
+        assert_eq!(session.subtitle(), "/dev/ttyS0 · 9600 8N1");
     }
 }

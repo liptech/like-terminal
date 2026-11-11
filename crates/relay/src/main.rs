@@ -369,6 +369,173 @@ fn parse_hex(value: &str) -> Option<String> {
     Some(format!("{r};{g};{b}"))
 }
 
+struct SerialConfig {
+    port: String,
+    baud: u32,
+    data_bits: u8,
+    parity: String,
+    stop_bits: u8,
+    flow: String,
+}
+
+fn baud_const(baud: u32) -> Option<libc::speed_t> {
+    Some(match baud {
+        300 => libc::B300,
+        600 => libc::B600,
+        1200 => libc::B1200,
+        2400 => libc::B2400,
+        4800 => libc::B4800,
+        9600 => libc::B9600,
+        19200 => libc::B19200,
+        38400 => libc::B38400,
+        57600 => libc::B57600,
+        115200 => libc::B115200,
+        230400 => libc::B230400,
+        460800 => libc::B460800,
+        921600 => libc::B921600,
+        _ => return None,
+    })
+}
+
+fn open_serial(config: &SerialConfig) -> Result<libc::c_int, String> {
+    let path = CString::new(config.port.as_str())
+        .map_err(|_| format!("porta serial inválida: {}", config.port))?;
+    let fd = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK,
+        )
+    };
+    if fd < 0 {
+        return Err(format!(
+            "não foi possível abrir {}: {}",
+            config.port,
+            std::io::Error::last_os_error()
+        ));
+    }
+    let speed = match baud_const(config.baud) {
+        Some(speed) => speed,
+        None => {
+            unsafe { libc::close(fd) };
+            return Err(format!("velocidade não suportada: {}", config.baud));
+        }
+    };
+    unsafe {
+        let mut settings: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut settings) != 0 {
+            let error = std::io::Error::last_os_error();
+            libc::close(fd);
+            return Err(format!(
+                "falha ao ler configuração de {}: {error}",
+                config.port
+            ));
+        }
+        libc::cfmakeraw(&mut settings);
+        settings.c_cflag |= libc::CLOCAL | libc::CREAD;
+        settings.c_cflag &= !libc::CSIZE;
+        settings.c_cflag |= match config.data_bits {
+            5 => libc::CS5,
+            6 => libc::CS6,
+            7 => libc::CS7,
+            _ => libc::CS8,
+        };
+        match config.parity.as_str() {
+            "even" => settings.c_cflag |= libc::PARENB,
+            "odd" => settings.c_cflag |= libc::PARENB | libc::PARODD,
+            _ => {}
+        }
+        if config.stop_bits == 2 {
+            settings.c_cflag |= libc::CSTOPB;
+        }
+        match config.flow.as_str() {
+            "hardware" => settings.c_cflag |= libc::CRTSCTS,
+            "software" => settings.c_iflag |= libc::IXON | libc::IXOFF,
+            _ => {}
+        }
+        settings.c_cc[libc::VMIN] = 1;
+        settings.c_cc[libc::VTIME] = 0;
+        libc::cfsetispeed(&mut settings, speed);
+        libc::cfsetospeed(&mut settings, speed);
+        if libc::tcsetattr(fd, libc::TCSANOW, &settings) != 0 {
+            let error = std::io::Error::last_os_error();
+            libc::close(fd);
+            return Err(format!("falha ao configurar {}: {error}", config.port));
+        }
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK);
+    }
+    Ok(fd)
+}
+
+fn write_all(fd: libc::c_int, mut data: &[u8]) -> bool {
+    while !data.is_empty() {
+        let written = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
+        if written > 0 {
+            data = &data[written as usize..];
+        } else if written < 0
+            && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
+        {
+            continue;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+fn serial_bridge(config: &SerialConfig) -> i32 {
+    let fd = match open_serial(config) {
+        Ok(fd) => fd,
+        Err(message) => {
+            eprintln!("like-terminal-relay: {message}");
+            return 1;
+        }
+    };
+    let mut buffer = [0u8; 4096];
+    let code = loop {
+        let mut fds = [
+            libc::pollfd {
+                fd: libc::STDIN_FILENO,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+        ];
+        let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) };
+        if ready < 0 {
+            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            break 1;
+        }
+        if fds[0].revents & libc::POLLIN != 0 {
+            let count =
+                unsafe { libc::read(libc::STDIN_FILENO, buffer.as_mut_ptr().cast(), buffer.len()) };
+            if count <= 0 || !write_all(fd, &buffer[..count as usize]) {
+                break 0;
+            }
+        }
+        if fds[1].revents & libc::POLLIN != 0 {
+            let count = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
+            if count <= 0 || !write_all(libc::STDOUT_FILENO, &buffer[..count as usize]) {
+                break 0;
+            }
+        }
+        if fds[1].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            break 0;
+        }
+        if fds[0].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            break 0;
+        }
+    };
+    unsafe { libc::close(fd) };
+    code
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut rules = Vec::new();
@@ -377,6 +544,7 @@ fn main() {
     let mut log_timestamps = true;
     let mut log_enabled = true;
     let mut command = Vec::new();
+    let mut serial: Option<SerialConfig> = None;
     let mut index = 1;
     while index < args.len() {
         match args[index].as_str() {
@@ -410,6 +578,48 @@ fn main() {
                 log_enabled = false;
                 index += 1;
             }
+            "--serial" => {
+                let port = args.get(index + 1).cloned().unwrap_or_default();
+                serial = Some(SerialConfig {
+                    port,
+                    baud: 9600,
+                    data_bits: 8,
+                    parity: "none".to_string(),
+                    stop_bits: 1,
+                    flow: "none".to_string(),
+                });
+                index += 2;
+            }
+            "--baud" => {
+                if let (Some(config), Some(value)) = (serial.as_mut(), args.get(index + 1)) {
+                    config.baud = value.parse().unwrap_or(9600);
+                }
+                index += 2;
+            }
+            "--databits" => {
+                if let (Some(config), Some(value)) = (serial.as_mut(), args.get(index + 1)) {
+                    config.data_bits = value.parse().unwrap_or(8);
+                }
+                index += 2;
+            }
+            "--parity" => {
+                if let (Some(config), Some(value)) = (serial.as_mut(), args.get(index + 1)) {
+                    config.parity = value.clone();
+                }
+                index += 2;
+            }
+            "--stopbits" => {
+                if let (Some(config), Some(value)) = (serial.as_mut(), args.get(index + 1)) {
+                    config.stop_bits = value.parse().unwrap_or(1);
+                }
+                index += 2;
+            }
+            "--flow" => {
+                if let (Some(config), Some(value)) = (serial.as_mut(), args.get(index + 1)) {
+                    config.flow = value.clone();
+                }
+                index += 2;
+            }
             "--" => {
                 command.extend(args[index + 1..].iter().cloned());
                 break;
@@ -418,9 +628,9 @@ fn main() {
         }
     }
 
-    if command.is_empty() {
+    if command.is_empty() && serial.is_none() {
         eprintln!(
-            "uso: like-terminal-relay [--rules 'Chave=#rrggbb[:bold][:nocase];...'] [--rules-file arquivo] [--ips] [--log arquivo [--log-raw] [--log-paused]] -- comando [args]"
+            "uso: like-terminal-relay [--rules 'Chave=#rrggbb[:bold][:nocase];...'] [--rules-file arquivo] [--ips] [--log arquivo [--log-raw] [--log-paused]] [--serial porta [--baud n] [--databits n] [--parity none|even|odd] [--stopbits 1|2] [--flow none|software|hardware]] -- comando [args]"
         );
         std::process::exit(2);
     }
@@ -457,6 +667,9 @@ fn main() {
                 libc::cfmakeraw(&mut termios);
                 libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &termios);
             }
+        }
+        if let Some(config) = serial.as_ref() {
+            std::process::exit(serial_bridge(config));
         }
         let program = CString::new(command[0].clone()).unwrap_or_default();
         let mut argv: Vec<CString> = command

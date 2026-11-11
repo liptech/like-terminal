@@ -32,6 +32,23 @@ pub fn validate_session(session: &Session) -> Vec<ValidationIssue> {
         return issues;
     }
 
+    if session.telnet.is_some() || session.desktop.is_some() {
+        if session.host.trim().is_empty() {
+            issues.push(ValidationIssue::new("host", "Informe o host."));
+        }
+        if session
+            .host
+            .chars()
+            .any(|c| c.is_whitespace() || c == '/' || c == '@')
+        {
+            issues.push(ValidationIssue::new(
+                "host",
+                "O host não pode conter espaços, '@' ou '/'.",
+            ));
+        }
+        return issues;
+    }
+
     if session
         .host
         .chars()

@@ -8,7 +8,7 @@ use libadwaita::prelude::*;
 use lt_core::{Folder, HighlightRule, Paths, Profile, Session, Store};
 use uuid::Uuid;
 
-use crate::app::{APP_ID, APP_NAME, VERSION};
+use crate::app::{APP_NAME, VERSION};
 use crate::panes::PaneView;
 use crate::preferences::{self, PrefsHooks};
 use crate::session_dialog;
@@ -32,9 +32,25 @@ pub fn present(app: &adw::Application) {
     match Window::new(app) {
         Ok(window) => {
             WINDOW.with(|slot| *slot.borrow_mut() = Some(window.clone()));
-            window.window.present();
+            if window.needs_unlock() {
+                let snapshot = window.store.borrow().clone();
+                let target = window.clone();
+                crate::lock::show(
+                    &window.window,
+                    &snapshot,
+                    Rc::new(move || target.window.present()),
+                );
+            } else {
+                window.window.present();
+            }
         }
         Err(error) => tracing::error!(%error, "falha ao abrir a janela"),
+    }
+}
+
+impl Window {
+    fn needs_unlock(&self) -> bool {
+        self.store.borrow().settings.lock_hash.is_some()
     }
 }
 
@@ -553,6 +569,10 @@ impl Window {
     }
 
     fn open_session(&self, session: Session) {
+        if session.desktop.is_some() {
+            self.open_desktop(&session);
+            return;
+        }
         let profile = {
             let store = self.store.borrow();
             let profile_id = session.terminal.profile.clone();
@@ -843,6 +863,74 @@ impl Window {
             .iter()
             .filter_map(|(_, pane)| pane.tree())
             .collect()
+    }
+
+    fn open_desktop(&self, session: &Session) {
+        let Some(desktop) = session.desktop.as_ref() else {
+            return;
+        };
+        let port = desktop.effective_port();
+        let sandboxed = std::path::Path::new("/.flatpak-info").exists();
+        let candidates: &[&str] = match desktop.protocol {
+            lt_core::DesktopProtocol::Vnc => &["vncviewer", "xtigervncviewer", "remmina"],
+            lt_core::DesktopProtocol::Rdp => &["xfreerdp", "xfreerdp3", "remmina"],
+        };
+        let Some(client) = candidates
+            .iter()
+            .find(|name| crate::terminal::find_in_path(name).is_some())
+        else {
+            self.toast(&format!(
+                "Instale um cliente {} (vncviewer, xfreerdp ou remmina) para abrir esta sessão.",
+                desktop.protocol.label()
+            ));
+            return;
+        };
+
+        let mut args: Vec<String> = Vec::new();
+        match desktop.protocol {
+            lt_core::DesktopProtocol::Vnc => {
+                if *client == "remmina" {
+                    args.push("-c".to_string());
+                    args.push(format!("vnc://{}:{}", session.host, port));
+                } else {
+                    args.push(format!("{}:{}", session.host, port));
+                }
+            }
+            lt_core::DesktopProtocol::Rdp => {
+                if *client == "remmina" {
+                    args.push("-c".to_string());
+                    args.push(format!("rdp://{}:{}", session.host, port));
+                } else {
+                    args.push(format!("/v:{}:{}", session.host, port));
+                    if !session.user.trim().is_empty() {
+                        args.push(format!("/u:{}", session.user.trim()));
+                    }
+                    if !desktop.domain.trim().is_empty() {
+                        args.push(format!("/d:{}", desktop.domain.trim()));
+                    }
+                }
+            }
+        }
+        args.extend(desktop.extra_args.split_whitespace().map(str::to_string));
+
+        let mut command = if sandboxed {
+            let mut command = std::process::Command::new("flatpak-spawn");
+            command.arg("--host");
+            command.arg(client);
+            command
+        } else {
+            std::process::Command::new(client)
+        };
+        command.args(&args);
+        match command.spawn() {
+            Ok(_) => self.toast(&format!(
+                "Abrindo {} em {}:{}",
+                desktop.protocol.label(),
+                session.host,
+                port
+            )),
+            Err(error) => self.toast(&format!("Falha ao abrir o cliente: {error}")),
+        }
     }
 
     fn open_session_ids(&self) -> Vec<Uuid> {
@@ -1190,6 +1278,19 @@ impl Window {
                         }
                     })
                 },
+                set_security: {
+                    let weak = Rc::downgrade(&self.as_rc());
+                    Rc::new(move |lock_hash: Option<String>, totp: bool| {
+                        if let Some(window) = weak.upgrade() {
+                            {
+                                let mut store = window.store.borrow_mut();
+                                store.settings.lock_hash = lock_hash;
+                                store.settings.totp_enabled = totp;
+                            }
+                            window.save_store();
+                        }
+                    })
+                },
             },
         );
     }
@@ -1219,17 +1320,62 @@ impl Window {
     }
 
     fn show_about(&self) {
-        let about = adw::AboutWindow::builder()
-            .application_name(APP_NAME)
-            .application_icon(APP_ID)
-            .version(VERSION)
-            .developer_name("Felipe Mendes")
-            .comments("Terminal com abas, painéis divididos e gerenciamento de sessões SSH.")
-            .copyright("© 2026 Felipe Mendes")
-            .license_type(gtk::License::Gpl30)
+        let about = adw::Window::builder()
+            .title("Sobre")
             .modal(true)
+            .resizable(false)
+            .transient_for(&self.window)
             .build();
-        about.set_transient_for(Some(&self.window));
+
+        let header = adw::HeaderBar::new();
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        content.set_margin_top(24);
+        content.set_margin_bottom(24);
+        content.set_margin_start(32);
+        content.set_margin_end(32);
+        content.set_halign(gtk::Align::Center);
+
+        if let Some(logo) = brand_logo() {
+            let image = gtk::Image::from_paintable(Some(&logo));
+            image.set_pixel_size(220);
+            content.append(&image);
+        }
+
+        let name = gtk::Label::new(Some(APP_NAME));
+        name.add_css_class("title-1");
+        content.append(&name);
+
+        let version = gtk::Label::new(Some(&format!("Versão {VERSION}")));
+        version.add_css_class("dim-label");
+        content.append(&version);
+
+        let summary = gtk::Label::new(Some(
+            "Terminal com abas, painéis divididos, SSH, SFTP, serial, telnet, VNC e RDP.",
+        ));
+        summary.set_wrap(true);
+        summary.set_justify(gtk::Justification::Center);
+        summary.set_max_width_chars(40);
+        content.append(&summary);
+
+        let author = gtk::Label::new(Some("Felipe Mendes · Liptech"));
+        author.add_css_class("dim-label");
+        content.append(&author);
+
+        let license = gtk::Label::new(Some("Licenciado sob GNU GPL v3 ou posterior"));
+        license.add_css_class("caption");
+        license.add_css_class("dim-label");
+        content.append(&license);
+
+        let copyright = gtk::Label::new(Some("© 2026 Felipe Mendes"));
+        copyright.add_css_class("caption");
+        copyright.add_css_class("dim-label");
+        content.append(&copyright);
+
+        toolbar.set_content(Some(&content));
+        about.set_content(Some(&toolbar));
         about.present();
     }
 
@@ -1289,6 +1435,14 @@ where
         }
     });
     app.add_action(&action);
+}
+
+fn brand_logo() -> Option<gtk::gdk::Texture> {
+    const LIGHT: &str = include_str!("../../../data/brand/liptech-horizontal-light.svg");
+    const DARK: &str = include_str!("../../../data/brand/liptech-horizontal-dark.svg");
+    let dark = adw::StyleManager::default().is_dark();
+    let svg = if dark { DARK } else { LIGHT };
+    gtk::gdk::Texture::from_bytes(&glib::Bytes::from_static(svg.as_bytes())).ok()
 }
 
 fn doc_path(name: &str) -> Option<std::path::PathBuf> {

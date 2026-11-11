@@ -316,6 +316,102 @@ impl SerialOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopProtocol {
+    #[default]
+    Vnc,
+    Rdp,
+}
+
+impl DesktopProtocol {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Vnc => "vnc",
+            Self::Rdp => "rdp",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Vnc => "VNC",
+            Self::Rdp => "RDP",
+        }
+    }
+
+    pub fn default_port(self) -> u16 {
+        match self {
+            Self::Vnc => 5900,
+            Self::Rdp => 3389,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesktopOptions {
+    #[serde(default)]
+    pub protocol: DesktopProtocol,
+    #[serde(default)]
+    pub port: u16,
+    #[serde(default)]
+    pub domain: String,
+    #[serde(default)]
+    pub extra_args: String,
+}
+
+impl Default for DesktopOptions {
+    fn default() -> Self {
+        Self {
+            protocol: DesktopProtocol::Vnc,
+            port: 0,
+            domain: String::new(),
+            extra_args: String::new(),
+        }
+    }
+}
+
+impl DesktopOptions {
+    pub fn effective_port(&self) -> u16 {
+        if self.port == 0 {
+            self.protocol.default_port()
+        } else {
+            self.port
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TelnetOptions {
+    pub port: u16,
+}
+
+impl Default for TelnetOptions {
+    fn default() -> Self {
+        Self { port: 23 }
+    }
+}
+
+impl TelnetOptions {
+    pub fn effective_port(&self) -> u16 {
+        if self.port == 0 {
+            23
+        } else {
+            self.port
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionKind {
+    Ssh,
+    Local,
+    Serial,
+    Telnet,
+    Vnc,
+    Rdp,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
@@ -341,6 +437,10 @@ pub struct Session {
     pub log_dir: Option<String>,
     #[serde(default)]
     pub serial: Option<SerialOptions>,
+    #[serde(default)]
+    pub telnet: Option<TelnetOptions>,
+    #[serde(default)]
+    pub desktop: Option<DesktopOptions>,
 }
 
 impl Session {
@@ -359,6 +459,8 @@ impl Session {
             log_enabled: false,
             log_dir: None,
             serial: None,
+            telnet: None,
+            desktop: None,
         }
     }
 
@@ -410,20 +512,63 @@ impl Session {
         self.log_directory().join(format!("{slug}-{stamp}.log"))
     }
 
+    pub fn kind(&self) -> SessionKind {
+        if self.serial.is_some() {
+            return SessionKind::Serial;
+        }
+        if self.telnet.is_some() {
+            return SessionKind::Telnet;
+        }
+        if let Some(desktop) = &self.desktop {
+            return match desktop.protocol {
+                DesktopProtocol::Vnc => SessionKind::Vnc,
+                DesktopProtocol::Rdp => SessionKind::Rdp,
+            };
+        }
+        if self.host.trim().is_empty() {
+            SessionKind::Local
+        } else {
+            SessionKind::Ssh
+        }
+    }
+
     pub fn is_local(&self) -> bool {
-        self.serial.is_none() && self.host.trim().is_empty()
+        self.kind() == SessionKind::Local
     }
 
     pub fn is_serial(&self) -> bool {
-        self.serial.is_some()
+        self.kind() == SessionKind::Serial
+    }
+
+    pub fn is_telnet(&self) -> bool {
+        self.kind() == SessionKind::Telnet
     }
 
     pub fn subtitle(&self) -> String {
         if let Some(serial) = &self.serial {
             return serial.summary();
         }
-        if self.is_local() {
-            return "Terminal local".to_string();
+        match self.kind() {
+            SessionKind::Local => return "Terminal local".to_string(),
+            SessionKind::Telnet => {
+                let port = self
+                    .telnet
+                    .as_ref()
+                    .map(|t| t.effective_port())
+                    .unwrap_or(23);
+                return format!("Telnet · {}:{}", self.host, port);
+            }
+            SessionKind::Vnc | SessionKind::Rdp => {
+                if let Some(desktop) = &self.desktop {
+                    return format!(
+                        "{} · {}:{}",
+                        desktop.protocol.label(),
+                        self.host,
+                        desktop.effective_port()
+                    );
+                }
+            }
+            SessionKind::Ssh | SessionKind::Serial => {}
         }
         if self.user.is_empty() {
             format!("{}:{}", self.host, self.port)
@@ -736,6 +881,10 @@ pub struct Settings {
     pub default_profile: String,
     #[serde(default = "default_true")]
     pub restore_tabs: bool,
+    #[serde(default)]
+    pub lock_hash: Option<String>,
+    #[serde(default)]
+    pub totp_enabled: bool,
 }
 
 impl Default for Settings {
@@ -744,6 +893,8 @@ impl Default for Settings {
             confirm_close_running: default_true(),
             default_profile: DEFAULT_PROFILE_ID.to_string(),
             restore_tabs: true,
+            lock_hash: None,
+            totp_enabled: false,
         }
     }
 }
@@ -978,6 +1129,65 @@ mod tests {
             target_port: 0,
         };
         assert_eq!(dynamic.summary(), "127.0.0.1:1080 (SOCKS)");
+    }
+
+    #[test]
+    fn session_kind_and_subtitle_cover_every_protocol() {
+        let mut session = Session::new("Local", "");
+        assert_eq!(session.kind(), SessionKind::Local);
+        assert_eq!(session.subtitle(), "Terminal local");
+
+        session.host = "10.0.0.5".into();
+        session.user = "ubuntu".into();
+        assert_eq!(session.kind(), SessionKind::Ssh);
+        assert_eq!(session.subtitle(), "ubuntu@10.0.0.5:22");
+
+        session.telnet = Some(TelnetOptions { port: 0 });
+        assert_eq!(session.kind(), SessionKind::Telnet);
+        assert_eq!(session.telnet.as_ref().unwrap().effective_port(), 23);
+        assert_eq!(session.subtitle(), "Telnet · 10.0.0.5:23");
+
+        session.telnet = None;
+        session.desktop = Some(DesktopOptions {
+            protocol: DesktopProtocol::Rdp,
+            port: 0,
+            domain: String::new(),
+            extra_args: String::new(),
+        });
+        assert_eq!(session.kind(), SessionKind::Rdp);
+        assert_eq!(session.desktop.as_ref().unwrap().effective_port(), 3389);
+        assert_eq!(session.subtitle(), "RDP · 10.0.0.5:3389");
+    }
+
+    #[test]
+    fn telnet_and_desktop_round_trip() {
+        let mut session = Session::new("Console", "10.0.0.9");
+        session.telnet = Some(TelnetOptions { port: 2323 });
+        session.desktop = Some(DesktopOptions {
+            protocol: DesktopProtocol::Vnc,
+            port: 5901,
+            domain: "LIPTECH".into(),
+            extra_args: "-quality 9".into(),
+        });
+        let encoded = serde_json::to_string(&session).unwrap();
+        let decoded: Session = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.telnet.unwrap().effective_port(), 2323);
+        let desktop = decoded.desktop.unwrap();
+        assert_eq!(desktop.protocol, DesktopProtocol::Vnc);
+        assert_eq!(desktop.effective_port(), 5901);
+        assert_eq!(desktop.domain, "LIPTECH");
+    }
+
+    #[test]
+    fn legacy_session_without_new_protocols_deserializes() {
+        let session: Session = serde_json::from_str(
+            r#"{"id":"11111111-1111-4111-8111-111111111111","name":"x","folder":null,
+                "host":"","port":22,"user":"","auth":{"method":"password"},
+                "ssh":{},"terminal":{}}"#,
+        )
+        .unwrap();
+        assert!(session.serial.is_none() && session.telnet.is_none() && session.desktop.is_none());
+        assert_eq!(session.kind(), SessionKind::Local);
     }
 
     #[test]

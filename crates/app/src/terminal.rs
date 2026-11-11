@@ -41,7 +41,17 @@ impl TerminalView {
         terminal.set_vexpand(true);
         apply_profile(&terminal, profile);
 
-        let command = if let Some(serial) = session.serial.as_ref() {
+        let command = if let Some(telnet) = session.telnet.as_ref() {
+            let relay = relay_path().ok_or(lt_ssh::BuildError::MissingRelay)?;
+            let mut args = relay_options(session, profile, highlight);
+            args.push("--telnet".to_string());
+            args.push(telnet_target(&session.host, telnet.effective_port()));
+            lt_ssh::CommandSpec {
+                program: relay,
+                args,
+                env: Vec::new(),
+            }
+        } else if let Some(serial) = session.serial.as_ref() {
             let relay = relay_path().ok_or(lt_ssh::BuildError::MissingRelay)?;
             let mut args = relay_options(session, profile, highlight);
             args.extend(serial_args(serial));
@@ -452,6 +462,14 @@ fn relay_options(session: &Session, profile: &Profile, highlight: &HighlightConf
     args
 }
 
+fn telnet_target(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 fn serial_args(serial: &SerialOptions) -> Vec<String> {
     vec![
         "--serial".to_string(),
@@ -469,7 +487,7 @@ fn serial_args(serial: &SerialOptions) -> Vec<String> {
     ]
 }
 
-fn find_in_path(name: &str) -> Option<String> {
+pub fn find_in_path(name: &str) -> Option<String> {
     let paths = std::env::var_os("PATH")?;
     std::env::split_paths(&paths)
         .map(|dir| dir.join(name))

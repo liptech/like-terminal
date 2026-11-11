@@ -5,6 +5,20 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.4.0] - 2026-11-11
+
+### Adicionado
+
+- Sessões **Telnet** com negociação de terminal pelo próprio relay, sem depender do binário `telnet`.
+- Sessões **VNC** e **RDP** que abrem o cliente instalado (`vncviewer`, `xfreerdp` ou `remmina`), com host, porta, usuário, domínio e argumentos extras.
+- Tela de bloqueio do aplicativo com senha local (Argon2) e verificação em duas etapas (TOTP) opcional, configurável em Preferências → Segurança.
+- Seletor de tipo de conexão no diálogo de sessão com seis opções: SSH, Terminal local, Serial, Telnet, VNC e RDP.
+
+### Alterado
+
+- Novo ícone do aplicativo, com identidade visual de terminal, e logotipo Liptech na janela Sobre.
+- Janela Sobre personalizada com a marca Liptech.
+
 ## [0.3.1] - 2026-11-11
 
 ### Adicionado

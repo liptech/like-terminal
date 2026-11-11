@@ -6,8 +6,8 @@ use gtk::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use lt_core::{
-    validate_session, AuthMethod, ForwardRule, SerialFlow, SerialOptions, SerialParity, Session,
-    Store, SERIAL_BAUDS,
+    validate_session, AuthMethod, DesktopOptions, DesktopProtocol, ForwardRule, SerialFlow,
+    SerialOptions, SerialParity, Session, Store, TelnetOptions, SERIAL_BAUDS,
 };
 
 pub fn show<F>(
@@ -58,6 +58,9 @@ pub fn show<F>(
     let mut row = 1;
     let mut ssh_rows: Vec<gtk::Widget> = Vec::new();
     let mut serial_rows: Vec<gtk::Widget> = Vec::new();
+    let mut endpoint_rows: Vec<gtk::Widget> = Vec::new();
+    let mut user_rows: Vec<gtk::Widget> = Vec::new();
+    let mut desktop_rows: Vec<gtk::Widget> = Vec::new();
 
     let name = gtk::Entry::new();
     name.set_hexpand(true);
@@ -72,21 +75,22 @@ pub fn show<F>(
     let folder = gtk::DropDown::from_strings(&folder_names);
     attach(&grid, &mut row, "Pasta", &folder);
 
-    let kind = gtk::DropDown::from_strings(&["SSH / Terminal local", "Serial"]);
+    let kind =
+        gtk::DropDown::from_strings(&["SSH", "Terminal local", "Serial", "Telnet", "VNC", "RDP"]);
     attach(&grid, &mut row, "Tipo de conexão", &kind);
 
     let host = gtk::Entry::new();
     host.set_hexpand(true);
     host.set_placeholder_text(Some("ex.: 10.0.0.21 — vazio abre um shell local"));
-    attach_group(&grid, &mut row, "Host", &host, &mut ssh_rows);
+    attach_group(&grid, &mut row, "Host", &host, &mut endpoint_rows);
 
     let port = gtk::SpinButton::with_range(1.0, 65535.0, 1.0);
     port.set_value(22.0);
-    attach_group(&grid, &mut row, "Porta", &port, &mut ssh_rows);
+    attach_group(&grid, &mut row, "Porta", &port, &mut endpoint_rows);
 
     let user = gtk::Entry::new();
     user.set_hexpand(true);
-    attach_group(&grid, &mut row, "Usuário", &user, &mut ssh_rows);
+    attach_group(&grid, &mut row, "Usuário", &user, &mut user_rows);
 
     let methods = AuthMethod::all();
     let method_labels: Vec<&str> = methods.iter().map(|method| method.label()).collect();
@@ -264,6 +268,26 @@ pub fn show<F>(
         }
     }
 
+    let desktop_domain = gtk::Entry::new();
+    desktop_domain.set_placeholder_text(Some("opcional"));
+    attach_group(
+        &grid,
+        &mut row,
+        "Domínio",
+        &desktop_domain,
+        &mut desktop_rows,
+    );
+
+    let desktop_extra = gtk::Entry::new();
+    desktop_extra.set_placeholder_text(Some("argumentos do cliente, separados por espaço"));
+    attach_group(
+        &grid,
+        &mut row,
+        "Argumentos extras",
+        &desktop_extra,
+        &mut desktop_rows,
+    );
+
     let key_path: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
 
     if let Some(session) = existing.as_ref() {
@@ -290,7 +314,7 @@ pub fn show<F>(
             *key_path.borrow_mut() = Some(path.clone());
         }
         if let Some(serial) = session.serial.as_ref() {
-            kind.set_selected(1);
+            kind.set_selected(2);
             serial_port.set_text(&serial.port);
             if let Some(index) = SERIAL_BAUDS.iter().position(|baud| *baud == serial.baud) {
                 serial_baud.set_selected(index as u32);
@@ -308,28 +332,81 @@ pub fn show<F>(
                 SerialFlow::Hardware => 2,
             });
         }
+        if let Some(telnet) = session.telnet.as_ref() {
+            kind.set_selected(3);
+            port.set_value(f64::from(telnet.effective_port()));
+        }
+        if let Some(desktop) = session.desktop.as_ref() {
+            kind.set_selected(match desktop.protocol {
+                DesktopProtocol::Vnc => 4,
+                DesktopProtocol::Rdp => 5,
+            });
+            port.set_value(f64::from(desktop.effective_port()));
+            desktop_domain.set_text(&desktop.domain);
+            desktop_extra.set_text(&desktop.extra_args);
+        }
     }
 
-    let apply_kind: Rc<dyn Fn(bool)> = {
+    let apply_kind: Rc<dyn Fn(u32)> = {
         let ssh_rows = ssh_rows.clone();
         let serial_rows = serial_rows.clone();
-        Rc::new(move |serial| {
-            for widget in &ssh_rows {
-                widget.set_visible(!serial);
-            }
-            for widget in &serial_rows {
-                widget.set_visible(serial);
-            }
+        let endpoint_rows = endpoint_rows.clone();
+        let user_rows = user_rows.clone();
+        let desktop_rows = desktop_rows.clone();
+        Rc::new(move |index| {
+            let show = |rows: &[gtk::Widget], visible: bool| {
+                for widget in rows {
+                    widget.set_visible(visible);
+                }
+            };
+            show(&ssh_rows, index == 0);
+            show(&serial_rows, index == 2);
+            show(&endpoint_rows, index != 2);
+            show(&user_rows, index == 0 || index >= 4);
+            show(&desktop_rows, index >= 4);
         })
     };
-    apply_kind(
-        existing
-            .as_ref()
-            .is_some_and(|session| session.serial.is_some()),
-    );
+    let initial_kind = existing
+        .as_ref()
+        .map(|session| {
+            if session.serial.is_some() {
+                2
+            } else if session.telnet.is_some() {
+                3
+            } else if session.desktop.is_some() {
+                if matches!(
+                    session.desktop.as_ref().map(|desktop| desktop.protocol),
+                    Some(DesktopProtocol::Rdp)
+                ) {
+                    5
+                } else {
+                    4
+                }
+            } else if session.host.is_empty() {
+                1
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+    apply_kind(initial_kind);
     {
         let apply_kind = apply_kind.clone();
-        kind.connect_selected_notify(move |dropdown| apply_kind(dropdown.selected() == 1));
+        let port = port.clone();
+        kind.connect_selected_notify(move |dropdown| {
+            let index = dropdown.selected();
+            apply_kind(index);
+            let default = match index {
+                0 => Some(22.0),
+                3 => Some(23.0),
+                4 => Some(5900.0),
+                5 => Some(3389.0),
+                _ => None,
+            };
+            if let Some(value) = default {
+                port.set_value(value);
+            }
+        });
     }
 
     {
@@ -416,30 +493,56 @@ pub fn show<F>(
             .map(str::to_string)
             .collect();
 
-        if kind.selected() == 1 {
-            session.serial = Some(SerialOptions {
-                port: serial_port.text().trim().to_string(),
-                baud: SERIAL_BAUDS
-                    .get(serial_baud.selected() as usize)
-                    .copied()
-                    .unwrap_or(9600),
-                data_bits: 5 + serial_bits.selected() as u8,
-                parity: match serial_parity.selected() {
-                    1 => SerialParity::Even,
-                    2 => SerialParity::Odd,
-                    _ => SerialParity::None,
-                },
-                stop_bits: 1 + serial_stop.selected() as u8,
-                flow: match serial_flow.selected() {
-                    1 => SerialFlow::Software,
-                    2 => SerialFlow::Hardware,
-                    _ => SerialFlow::None,
-                },
-            });
-            session.host.clear();
-            session.user.clear();
-        } else {
-            session.serial = None;
+        session.serial = None;
+        session.telnet = None;
+        session.desktop = None;
+        match kind.selected() {
+            0 => {}
+            1 => {
+                session.host.clear();
+                session.user.clear();
+            }
+            2 => {
+                session.serial = Some(SerialOptions {
+                    port: serial_port.text().trim().to_string(),
+                    baud: SERIAL_BAUDS
+                        .get(serial_baud.selected() as usize)
+                        .copied()
+                        .unwrap_or(9600),
+                    data_bits: 5 + serial_bits.selected() as u8,
+                    parity: match serial_parity.selected() {
+                        1 => SerialParity::Even,
+                        2 => SerialParity::Odd,
+                        _ => SerialParity::None,
+                    },
+                    stop_bits: 1 + serial_stop.selected() as u8,
+                    flow: match serial_flow.selected() {
+                        1 => SerialFlow::Software,
+                        2 => SerialFlow::Hardware,
+                        _ => SerialFlow::None,
+                    },
+                });
+                session.host.clear();
+                session.user.clear();
+            }
+            3 => {
+                session.telnet = Some(TelnetOptions {
+                    port: port.value().clamp(1.0, 65535.0) as u16,
+                });
+                session.user.clear();
+            }
+            index => {
+                session.desktop = Some(DesktopOptions {
+                    protocol: if index == 4 {
+                        DesktopProtocol::Vnc
+                    } else {
+                        DesktopProtocol::Rdp
+                    },
+                    port: port.value().clamp(1.0, 65535.0) as u16,
+                    domain: desktop_domain.text().trim().to_string(),
+                    extra_args: desktop_extra.text().trim().to_string(),
+                });
+            }
         }
 
         if session.name.is_empty() {

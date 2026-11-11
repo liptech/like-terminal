@@ -14,6 +14,7 @@ pub struct PrefsHooks {
     pub set_confirm_close: Rc<dyn Fn(bool)>,
     pub set_restore_tabs: Rc<dyn Fn(bool)>,
     pub set_highlight: Rc<dyn Fn(Vec<HighlightRule>, bool)>,
+    pub set_security: Rc<dyn Fn(Option<String>, bool)>,
 }
 
 pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
@@ -186,6 +187,10 @@ pub fn show(parent: &adw::ApplicationWindow, store: &Store, hooks: PrefsHooks) {
     window.add(&crate::highlight_page::build(
         store,
         hooks.set_highlight.clone(),
+    ));
+    window.add(&crate::security_page::build(
+        store,
+        hooks.set_security.clone(),
     ));
 
     window.present();

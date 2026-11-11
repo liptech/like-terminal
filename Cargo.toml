@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/ssh", "crates/relay", "crates/sftp", "crates/app"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -15,6 +15,10 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
 tracing = "0.1"
+argon2 = "0.5"
+hmac = "0.12"
+sha1 = "0.10"
+data-encoding = "2"
 lt-core = { path = "crates/core" }
 lt-ssh = { path = "crates/ssh" }
 lt-sftp = { path = "crates/sftp" }

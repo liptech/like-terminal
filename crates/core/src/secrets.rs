@@ -13,6 +13,10 @@ pub fn account_passphrase(session: Uuid) -> String {
     format!("session-{session}-passphrase")
 }
 
+pub fn account_totp() -> String {
+    "totp".to_string()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SecretError {
     #[error("keyring indisponível: {0}")]

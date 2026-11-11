@@ -1,8 +1,10 @@
 use std::ffi::CString;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, Read, Write};
+use std::net::{Shutdown, TcpStream, ToSocketAddrs};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 const ESC: u8 = 0x1b;
 
@@ -536,6 +538,222 @@ fn serial_bridge(config: &SerialConfig) -> i32 {
     code
 }
 
+const TELNET_IAC: u8 = 255;
+const TELNET_DONT: u8 = 254;
+const TELNET_DO: u8 = 253;
+const TELNET_WONT: u8 = 252;
+const TELNET_WILL: u8 = 251;
+const TELNET_SB: u8 = 250;
+const TELNET_SE: u8 = 240;
+const OPT_BINARY: u8 = 0;
+const OPT_SGA: u8 = 3;
+const OPT_TTYPE: u8 = 24;
+const OPT_NAWS: u8 = 31;
+
+struct TelnetConfig {
+    host: String,
+    port: u16,
+}
+
+fn parse_host_port(spec: &str) -> Option<(String, u16)> {
+    if let Some(rest) = spec.strip_prefix('[') {
+        let (host, tail) = rest.split_once(']')?;
+        let port = tail
+            .strip_prefix(':')
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(23);
+        return Some((host.to_string(), port));
+    }
+    let mut parts = spec.rsplitn(2, ':');
+    let first = parts.next()?;
+    match parts.next() {
+        Some(host) if !host.contains(':') => match first.parse() {
+            Ok(port) => Some((host.to_string(), port)),
+            Err(_) => Some((spec.to_string(), 23)),
+        },
+        _ => Some((spec.to_string(), 23)),
+    }
+}
+
+fn window_size() -> (u16, u16) {
+    let mut size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    unsafe {
+        libc::ioctl(libc::STDIN_FILENO, libc::TIOCGWINSZ, &mut size);
+    }
+    if size.ws_row == 0 || size.ws_col == 0 {
+        (24, 80)
+    } else {
+        (size.ws_row, size.ws_col)
+    }
+}
+
+enum TelnetState {
+    Data,
+    Iac,
+    Option(u8),
+    Sub,
+    SubIac,
+}
+
+fn telnet_pump(reader: &mut BufReader<TcpStream>, writer: &mut TcpStream, rows: u16, cols: u16) {
+    let mut state = TelnetState::Data;
+    let mut stdout = std::io::stdout();
+    let mut byte = [0u8; 1];
+    loop {
+        match reader.read(&mut byte) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        let value = byte[0];
+        state = match state {
+            TelnetState::Data => {
+                if value == TELNET_IAC {
+                    TelnetState::Iac
+                } else {
+                    let _ = stdout.write_all(&[value]);
+                    let _ = stdout.flush();
+                    TelnetState::Data
+                }
+            }
+            TelnetState::Iac => match value {
+                TELNET_IAC => {
+                    let _ = stdout.write_all(&[TELNET_IAC]);
+                    TelnetState::Data
+                }
+                TELNET_DO | TELNET_DONT | TELNET_WILL | TELNET_WONT => TelnetState::Option(value),
+                TELNET_SB => TelnetState::Sub,
+                _ => TelnetState::Data,
+            },
+            TelnetState::Option(command) => {
+                match command {
+                    TELNET_DO => {
+                        if value == OPT_SGA || value == OPT_BINARY {
+                            let _ = writer.write_all(&[TELNET_IAC, TELNET_WILL, value]);
+                        } else if value == OPT_NAWS {
+                            let _ = writer.write_all(&[TELNET_IAC, TELNET_WILL, OPT_NAWS]);
+                            let mut payload = vec![TELNET_IAC, TELNET_SB, OPT_NAWS];
+                            for byte in cols.to_be_bytes().into_iter().chain(rows.to_be_bytes()) {
+                                if byte == TELNET_IAC {
+                                    payload.push(TELNET_IAC);
+                                }
+                                payload.push(byte);
+                            }
+                            payload.extend_from_slice(&[TELNET_IAC, TELNET_SE]);
+                            let _ = writer.write_all(&payload);
+                        } else if value == OPT_TTYPE {
+                            let _ = writer.write_all(&[TELNET_IAC, TELNET_WILL, OPT_TTYPE]);
+                        } else {
+                            let _ = writer.write_all(&[TELNET_IAC, TELNET_WONT, value]);
+                        }
+                    }
+                    TELNET_WILL => {
+                        if value == OPT_SGA || value == OPT_BINARY || value == OPT_TTYPE {
+                            let _ = writer.write_all(&[TELNET_IAC, TELNET_DO, value]);
+                        } else {
+                            let _ = writer.write_all(&[TELNET_IAC, TELNET_DONT, value]);
+                        }
+                    }
+                    _ => {}
+                }
+                TelnetState::Data
+            }
+            TelnetState::Sub => {
+                if value == TELNET_IAC {
+                    TelnetState::SubIac
+                } else {
+                    TelnetState::Sub
+                }
+            }
+            TelnetState::SubIac => {
+                if value == TELNET_SE {
+                    TelnetState::Data
+                } else {
+                    TelnetState::Sub
+                }
+            }
+        };
+    }
+    let _ = stdout.flush();
+}
+
+fn telnet_bridge(config: &TelnetConfig) -> i32 {
+    let address = format!("{}:{}", config.host, config.port);
+    let mut iterator = match address.to_socket_addrs() {
+        Ok(iterator) => iterator,
+        Err(error) => {
+            eprintln!("like-terminal-relay: endereco invalido {address}: {error}");
+            return 1;
+        }
+    };
+    let mut stream = None;
+    for candidate in iterator.by_ref() {
+        match TcpStream::connect_timeout(&candidate, Duration::from_secs(10)) {
+            Ok(connection) => {
+                stream = Some(connection);
+                break;
+            }
+            Err(error) => {
+                eprintln!("like-terminal-relay: falha ao conectar em {candidate}: {error}");
+            }
+        }
+    }
+    let stream = match stream {
+        Some(stream) => stream,
+        None => {
+            eprintln!("like-terminal-relay: nao foi possivel conectar em {address}");
+            return 1;
+        }
+    };
+    let _ = stream.set_nodelay(true);
+    let reader_stream = match stream.try_clone() {
+        Ok(clone) => clone,
+        Err(error) => {
+            eprintln!("like-terminal-relay: falha ao duplicar socket: {error}");
+            return 1;
+        }
+    };
+    let writer_stream = match stream.try_clone() {
+        Ok(clone) => clone,
+        Err(error) => {
+            eprintln!("like-terminal-relay: falha ao duplicar socket: {error}");
+            return 1;
+        }
+    };
+    let (rows, cols) = window_size();
+
+    let pump = std::thread::spawn(move || {
+        let mut reader = BufReader::new(reader_stream);
+        let mut writer = writer_stream;
+        telnet_pump(&mut reader, &mut writer, rows, cols);
+        let _ = writer.shutdown(Shutdown::Both);
+        std::process::exit(0);
+    });
+
+    let mut input = std::io::stdin();
+    let mut buffer = [0u8; 8192];
+    let mut sink = stream;
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                if sink.write_all(&buffer[..read]).is_err() {
+                    break;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    let _ = sink.shutdown(Shutdown::Write);
+    let _ = pump.join();
+    0
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut rules = Vec::new();
@@ -545,6 +763,7 @@ fn main() {
     let mut log_enabled = true;
     let mut command = Vec::new();
     let mut serial: Option<SerialConfig> = None;
+    let mut telnet: Option<TelnetConfig> = None;
     let mut index = 1;
     while index < args.len() {
         match args[index].as_str() {
@@ -577,6 +796,13 @@ fn main() {
             "--log-paused" => {
                 log_enabled = false;
                 index += 1;
+            }
+            "--telnet" => {
+                let spec = args.get(index + 1).cloned().unwrap_or_default();
+                if let Some((host, port)) = parse_host_port(&spec) {
+                    telnet = Some(TelnetConfig { host, port });
+                }
+                index += 2;
             }
             "--serial" => {
                 let port = args.get(index + 1).cloned().unwrap_or_default();
@@ -628,9 +854,9 @@ fn main() {
         }
     }
 
-    if command.is_empty() && serial.is_none() {
+    if command.is_empty() && serial.is_none() && telnet.is_none() {
         eprintln!(
-            "uso: like-terminal-relay [--rules 'Chave=#rrggbb[:bold][:nocase];...'] [--rules-file arquivo] [--ips] [--log arquivo [--log-raw] [--log-paused]] [--serial porta [--baud n] [--databits n] [--parity none|even|odd] [--stopbits 1|2] [--flow none|software|hardware]] -- comando [args]"
+            "uso: like-terminal-relay [--rules 'Chave=#rrggbb[:bold][:nocase];...'] [--rules-file arquivo] [--ips] [--log arquivo [--log-raw] [--log-paused]] [--serial porta [--baud n] [--databits n] [--parity none|even|odd] [--stopbits 1|2] [--flow none|software|hardware]] [--telnet host:porta] -- comando [args]"
         );
         std::process::exit(2);
     }
@@ -670,6 +896,9 @@ fn main() {
         }
         if let Some(config) = serial.as_ref() {
             std::process::exit(serial_bridge(config));
+        }
+        if let Some(config) = telnet.as_ref() {
+            std::process::exit(telnet_bridge(config));
         }
         let program = CString::new(command[0].clone()).unwrap_or_default();
         let mut argv: Vec<CString> = command

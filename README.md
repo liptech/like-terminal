@@ -46,14 +46,16 @@ App ID: `io.github.liketerminal.LikeTerminal` · Binário: `like-terminal` · Au
 ### Pacote .deb
 
 ```bash
-sudo apt install ./build-deb/like-terminal_0.1.0_amd64.deb
+sudo apt install ./build-deb/like-terminal_0.3.1_amd64.deb
 ```
 
 Reinstalar/atualizar:
 
 ```bash
-sudo apt install --reinstall ./build-deb/like-terminal_0.1.0_amd64.deb
+sudo apt install --reinstall ./build-deb/like-terminal_0.3.1_amd64.deb
 ```
+
+O pacote adiciona automaticamente o usuário que executou o `apt` ao grupo `dialout`, necessário para acessar portas seriais. É preciso sair da sessão e entrar novamente para o grupo valer (se a adição falhar, o instalador imprime o comando manual).
 
 ### Flatpak
 

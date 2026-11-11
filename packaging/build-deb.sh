@@ -43,5 +43,39 @@ Description: Terminal GTK4 com abas, paineis divididos e conexoes SSH
  links e de busca.
 EOF
 
+cat > "${root}/DEBIAN/postinst" <<'POSTINST'
+#!/bin/sh
+set -e
+
+add_to_dialout() {
+    target="${SUDO_USER:-}"
+    if [ -z "$target" ] && [ -n "${PKEXEC_UID:-}" ]; then
+        target=$(id -nu "$PKEXEC_UID" 2>/dev/null || true)
+    fi
+    if [ -z "$target" ] || [ "$target" = "root" ]; then
+        return 0
+    fi
+    if id -nG "$target" 2>/dev/null | tr ' ' '\n' | grep -qx dialout; then
+        return 0
+    fi
+    if usermod -aG dialout "$target" 2>/dev/null; then
+        echo "Like Terminal: usuario $target adicionado ao grupo dialout."
+        echo "Saia da sessao e entre novamente para usar portas seriais."
+    else
+        echo "Like Terminal: nao foi possivel adicionar $target ao grupo dialout."
+        echo "Rode manualmente: sudo usermod -aG dialout $target"
+    fi
+}
+
+case "$1" in
+    configure)
+        add_to_dialout || true
+        ;;
+esac
+
+exit 0
+POSTINST
+chmod 755 "${root}/DEBIAN/postinst"
+
 dpkg-deb --root-owner-group --build "${root}" "build-deb/like-terminal_${version}_amd64.deb" >/dev/null
 echo "build-deb/like-terminal_${version}_amd64.deb"

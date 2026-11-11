@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.3.1] - 2026-11-11
+
+### Adicionado
+
+- O pacote `.deb` agora adiciona o usuário que instalou ao grupo `dialout`, permitindo usar portas seriais sem passos manuais (é preciso sair e entrar na sessão novamente).
+
 ## [0.3.0] - 2026-11-11
 
 ### Adicionado

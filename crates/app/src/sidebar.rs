@@ -1,5 +1,6 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
+use std::time::{Duration, Instant};
 
 use gtk::prelude::*;
 use lt_core::{Folder, Session, Store};
@@ -292,18 +293,37 @@ impl Sidebar {
         row.set_child(Some(&content));
 
         let callbacks = self.callbacks.clone();
-        row.connect_activate(move |_| (callbacks.connect)(id));
-
-        let callbacks = self.callbacks.clone();
-        let double_click = gtk::GestureClick::new();
-        double_click.set_button(1);
-        double_click.connect_pressed(move |gesture, n_press, _, _| {
-            if n_press == 2 {
-                gesture.set_state(gtk::EventSequenceState::Claimed);
+        let last_connect: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+        let fire = {
+            let callbacks = callbacks.clone();
+            let last_connect = last_connect.clone();
+            move || {
+                let now = Instant::now();
+                if last_connect.get().is_some_and(|previous| {
+                    now.duration_since(previous) < Duration::from_millis(400)
+                }) {
+                    return;
+                }
+                last_connect.set(Some(now));
                 (callbacks.connect)(id);
             }
-        });
-        row.add_controller(double_click);
+        };
+        {
+            let fire = fire.clone();
+            row.connect_activate(move |_| fire());
+        }
+        {
+            let fire = fire.clone();
+            let gesture = gtk::GestureClick::new();
+            gesture.set_button(gtk::gdk::BUTTON_PRIMARY);
+            gesture.connect_released(move |gesture, n_press, _, _| {
+                if n_press == 2 {
+                    gesture.set_state(gtk::EventSequenceState::Claimed);
+                    fire();
+                }
+            });
+            row.add_controller(gesture);
+        }
 
         row
     }

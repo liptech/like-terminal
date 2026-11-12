@@ -11,6 +11,7 @@
     "--socket=wayland",
     "--socket=ssh-auth",
     "--device=all",
+        "--talk-name=org.freedesktop.Flatpak",
     "--filesystem=home",
     "--talk-name=org.freedesktop.secrets"
   ],

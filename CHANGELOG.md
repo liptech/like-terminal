@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e
 este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.4.3] - 2026-11-12
+
+### Corrigido
+
+- No Flatpak, o app agora tem permissão para falar com `org.freedesktop.Flatpak`, permitindo detectar e abrir os clientes de VNC e RDP instalados no sistema host.
+
 ## [0.4.2] - 2026-11-12
 
 ### Corrigido

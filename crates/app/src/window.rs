@@ -877,7 +877,7 @@ impl Window {
         };
         let Some(client) = candidates
             .iter()
-            .find(|name| crate::terminal::find_in_path(name).is_some())
+            .find(|name| host_has_program(name, sandboxed))
         else {
             self.toast(&format!(
                 "Cliente {} não encontrado. Instale com: sudo apt install {}",
@@ -1462,6 +1462,20 @@ fn brand_logo() -> Option<gtk::gdk::Texture> {
     let dark = adw::StyleManager::default().is_dark();
     let svg = if dark { DARK } else { LIGHT };
     gtk::gdk::Texture::from_bytes(&glib::Bytes::from_static(svg.as_bytes())).ok()
+}
+
+fn host_has_program(name: &str, sandboxed: bool) -> bool {
+    if !sandboxed {
+        return crate::terminal::find_in_path(name).is_some();
+    }
+    std::process::Command::new("flatpak-spawn")
+        .arg("--host")
+        .arg("sh")
+        .arg("-c")
+        .arg(format!("command -v {name} >/dev/null 2>&1"))
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn doc_path(name: &str) -> Option<std::path::PathBuf> {

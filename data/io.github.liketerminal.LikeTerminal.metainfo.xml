@@ -39,6 +39,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.2" date="2026-11-12">
+      <description>
+        <p>No Flatpak, a detecção de clientes VNC e RDP consulta o sistema host.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-11-11">
       <description>
         <p>Abertura de VNC e RDP com clientes dedicados (TigerVNC e FreeRDP).</p>
